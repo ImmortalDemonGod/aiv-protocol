@@ -12,6 +12,20 @@
 > Each finding includes a **Status** tag: ✅ FIXED, ⚠️ PARTIALLY FIXED,
 > ❌ STILL PRESENT, or 🆕 NEW FINDING. A consolidated delta summary appears in §8.
 
+> **Genesis & Separation-of-Duties note (read this before the obvious objection).**
+> AIV was bootstrapped by a solo lab, so its own construction cannot satisfy the R2+ rule
+> that the Verifier be a *different human* than the Author. That is a **documented SoD
+> exception, not an oversight** — and the protocol's own answer is applied to itself, not
+> waved away. The **Author** is human+AI (the build); the independent **Verifier** identity
+> is the adversarial AI auditor (this report, by Cascade) plus claim-by-claim execution of
+> every assertion. The empirical self-study of that AI verifier — *including where it fails*:
+> 40% falsification accuracy, the Hallucination Cascade — is published, unflattering parts
+> intact, in [`.svp/AUDIT_AI_FIRST_PASS.md`](.svp/AUDIT_AI_FIRST_PASS.md). And
+> self-application is not asserted, it is on disk: [`FILE_PACKET_MAP.json`](FILE_PACKET_MAP.json)
+> maps every source file to its verification packet, and the `aiv-guard-python.yml` CI gate
+> runs those packets green on `main`. The verifier is verified by its own gate; the one rule
+> a one-person lab genuinely cannot meet (a *second human*) is named here rather than hidden.
+
 ---
 
 ## 1. Overview of the Codebase

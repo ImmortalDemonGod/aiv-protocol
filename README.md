@@ -80,7 +80,7 @@ The AI is a **superb Hunter** but a **dangerous Validator**.
 
 ### AIV Is a Hallucination Firewall
 
-An AI can hallucinate a function, but it cannot hallucinate a **Class A artifact** (a URL to a passing CI run) or a **Class B permalink** to a file that doesn't exist. The evidence class taxonomy forces every claim to be grounded in artifacts that exist in reality, making phantom approvals structurally impossible.
+An AI can hallucinate a function, but it cannot hallucinate a **Class A artifact** (a URL to a passing CI run) or a **Class B permalink** to a file that doesn't exist. The evidence class taxonomy forces every claim to be grounded in artifacts that exist in reality, making phantom approvals — an approval an AI fabricates by citing evidence that does not exist — structurally impossible. (This closes the *hallucination* path. It does not claim to prevent two colluding humans from signing off; that is a separate axis the protocol handles through Separation of Duties and an auditable trail — accountability, not prevention.)
 
 The audit also revealed the **Hallucination Cascade** — a recursive failure loop where an AI predicts a nonexistent function, "mentally traces" it, writes a falsification scenario testing it, and produces a perfectly valid JSON session describing a reality that doesn't exist. Artifact-based evidence classes break this loop at step one.
 
