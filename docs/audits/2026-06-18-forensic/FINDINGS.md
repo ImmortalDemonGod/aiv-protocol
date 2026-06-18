@@ -6,7 +6,9 @@ it does not add, soften, or invent findings. Every issue here traces back to one
 finding IDs in [`raw/stage2.json.md`](raw/stage2.json.md), and the clustering is reproducible from
 [`raw/distinct-issues.json.md`](raw/distinct-issues.json.md)._
 
-> **No fixes are applied in this PR.** This is a record-and-triage deliverable only.
+> The original audit (PR #9) applied **no fixes**; it was a record-and-triage deliverable.
+> Remediation status is tracked **inline per finding** as fixes land in follow-up PRs (see the
+> `Remediation:` / `✅ fixed` markers below).
 
 ---
 
@@ -69,6 +71,11 @@ pipeline)** and were not independently re-executed for this PR; they are flagged
   that can be made to approve unverified work by inducing an error. It is the audit's headline
   thesis ("the tool's own enforcement contains the class of defect it polices").
 - **Plan ref:** `05-plan.md` — fix `F43` (gate must fail closed).
+- **Remediation:** ✅ FIXED (`fix/f43-fail-closed-precommit`). `_validate_packet` now fails CLOSED
+  (`except Exception: print "[BLOCK]"; return False`) with a `finally` that cleans up temp artifacts.
+  Regression tests `tests/unit/test_pre_commit_hook.py::TestValidatePacketFailsClosed` pin it
+  (forced exception → `_validate_packet` returns `False`, `main()` exits non-zero). Evidence:
+  `VERIFICATION_PACKET_F43_FAIL_CLOSED.md`. Also closes **H12 / F113** (temp-file leak) via the same `finally`.
 
 ### C2 — Packet-pattern drift across the three enforcement surfaces
 - **Location:** `.husky/pre-commit:60-61` vs `src/aiv/cli/main.py:1879` vs `src/aiv/hooks/pre_commit.py:342`
@@ -101,7 +108,7 @@ Grouped by root cause; cross-file duplicates of one root cause are merged.
 |---|---|---|---|---|
 | H4 | `aiv close` commits the packet with `git commit --no-verify`, bypassing the hook it installs | `cli/main.py:1236-1238` | F69, F209, F17, F48, F87, F99, F26, F149, F6 | ✅ source |
 | H9 | guard `_inspect_class_a_run` does not check the CI run's *conclusion* — a failed run can satisfy Class A | `guard/runner.py:336-365` | F135 | audit-asserted |
-| H12 | temp files leaked in exception paths inside `_validate_packet` | `hooks/pre_commit.py:155-214` | F113, F175 | audit-asserted |
+| H12 | temp files leaked in exception paths inside `_validate_packet` | `hooks/pre_commit.py:155-214` | F113, F175 | ✅ fixed (with C1/F43 - `finally` cleanup) |
 
 ### Tier → evidence-class rubric drift (one logical defect, three surfaces)
 
