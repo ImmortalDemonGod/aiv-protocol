@@ -87,6 +87,7 @@ pipeline)** and were not independently re-executed for this PR; they are flagged
 Grouped by root cause; cross-file duplicates of one root cause are merged.
 
 ### Security surfaces
+
 | # | Issue | Location | Raw IDs | Verified |
 |---|---|---|---|---|
 | H1 | **Path traversal** — `.github/` prefix check defeated by `.github/x/../../../../etc/passwd`; resolved + read unconditionally | `guard/runner.py:191-204` | F14, F83, F146, F197 | ✅ source |
@@ -95,6 +96,7 @@ Grouped by root cause; cross-file duplicates of one root cause are merged.
 | H10 | SVP verifier identity is self-asserted via CLI arg, no authentication | `test_svp_full_workflow.py:387` | F91, F94 | audit-asserted |
 
 ### Enforcement / bypass
+
 | # | Issue | Location | Raw IDs | Verified |
 |---|---|---|---|---|
 | H4 | `aiv close` commits the packet with `git commit --no-verify`, bypassing the hook it installs | `cli/main.py:1236-1238` | F69, F209, F17, F48, F87, F99, F26, F149, F6 | ✅ source |
@@ -102,6 +104,7 @@ Grouped by root cause; cross-file duplicates of one root cause are merged.
 | H12 | temp files leaked in exception paths inside `_validate_packet` | `hooks/pre_commit.py:155-214` | F113, F175 | audit-asserted |
 
 ### Tier → evidence-class rubric drift (one logical defect, three surfaces)
+
 | # | Issue | Location | Raw IDs | Verified |
 |---|---|---|---|---|
 | H3 | R1 rubric documents `{A,B}` while pipeline enforces `{A,B,E}` | `lib/validators/pipeline.py:183` | F159, F23, F24 | ✅ source |
@@ -112,6 +115,7 @@ Grouped by root cause; cross-file duplicates of one root cause are merged.
 > single canonical `_TIER_REQUIRED` map. Treat H3/H3b/H3c as one work item.
 
 ### Error handling — silent failures that fabricate or drop evidence
+
 | # | Issue | Location | Raw IDs | Verified |
 |---|---|---|---|---|
 | H6 | `github_api._request` / `_request_bytes` don't catch `URLError`; `list_pr_files` returns a *partial* file list on pagination error | `guard/github_api.py:51-117` | F44, F45, F115, F174, F177, F178, F237 | audit-asserted |
@@ -120,11 +124,13 @@ Grouped by root cause; cross-file duplicates of one root cause are merged.
 | H11 | `collect_class_b` emits non-functional GitHub permalinks when `git rev-parse` fails | `lib/evidence_collector.py:283-285` | F47, F54 | audit-asserted |
 
 ### Dead code
+
 | # | Issue | Location | Raw IDs | Verified |
 |---|---|---|---|---|
 | H13 | `EvidenceValidator.validate_file_type_triggers` is never called | `lib/validators/evidence.py:261` | F46, F59, F158, F217 | audit-asserted |
 
 ### Test-suite integrity (assertions/docstrings that contradict themselves)
+
 | # | Issue | Location | Raw IDs | Verified |
 |---|---|---|---|---|
 | H14 | `or` instead of `and` in unlinked-evidence-consumption assertion | `test_validators.py:608` | F8, F78, F141 | audit-asserted |

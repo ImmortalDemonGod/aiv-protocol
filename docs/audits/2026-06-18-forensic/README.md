@@ -94,13 +94,18 @@ against the actual source, and the coverage figure was reproduced — all held. 
 
 ## Reproduce / resume
 
+> **The runner is stored Markdown-wrapped** (`pipeline/forensic_pipeline.mjs.md`) so it does **not**
+> execute in place. First extract it to a real `.mjs` file — see
+> [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for the one-liner — then run the restored copy:
+
 ```bash
-node docs/audits/2026-06-18-forensic/pipeline/forensic_pipeline.mjs            # resume from first incomplete stage
-node docs/audits/2026-06-18-forensic/pipeline/forensic_pipeline.mjs --fresh    # re-run from scratch
-node docs/audits/2026-06-18-forensic/pipeline/forensic_pipeline.mjs --stage 3  # re-run one stage
-node docs/audits/2026-06-18-forensic/pipeline/forensic_pipeline.mjs --selftest # zero-API schema/renderer check
+# after extracting per REPRODUCIBILITY.md (restores to _restored/pipeline/forensic_pipeline.mjs)
+node _restored/pipeline/forensic_pipeline.mjs            # resume from first incomplete stage
+node _restored/pipeline/forensic_pipeline.mjs --fresh    # re-run from scratch
+node _restored/pipeline/forensic_pipeline.mjs --stage 3  # re-run one stage
+node _restored/pipeline/forensic_pipeline.mjs --selftest # zero-API schema/renderer check
 ```
 
 See [`RESUME.md`](RESUME.md) for the full pause/resume procedure. Note the pipeline's own paths
-assume it runs from the repo root with the audit working directory restored; the copies under
-`pipeline/` are preserved for reference and reproducibility.
+assume it runs from the repo root with the audit working directory restored; the `pipeline/`
+copies here are Markdown-wrapped for reference and reproducibility, not direct execution.
