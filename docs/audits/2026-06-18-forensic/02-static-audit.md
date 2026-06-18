@@ -1,0 +1,3024 @@
+# 02 — Static Audit
+
+_Generated 2026-06-18 01:23:19 · branch `claude/eloquent-goodall-sqfrhf` · forensic-audit-pipeline (consolidated)_
+
+**251 findings** over 4 audit→falsify rounds (converged). By severity: {"medium":108,"info":15,"low":90,"high":36,"critical":2}.
+
+_Findings marked `unverified` survived but were not adjudicated by the falsifier; treat as lower-confidence._
+
+| ID | Sev | Status | Location | Class | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| F1 | medium | verified | src/aiv/lib/validators/anti_cheat.py:135-141 | correctness | Python operator precedence evaluates the compound condition as `(line.startswith('+') and not line.startswith('+++')) or (not line.startswith('-') and not line.startswith('\\') and not line.startswith('diff '))`. The second OR clause is satisfied by '+++' header lines (they are not '-', not '\\', not 'diff '), so current_line is incorrectly incremented for every +++ line. The @@ hunk header resets the counter, limiting practical impact to within-hunk offset drift, but the intended guard against +++ is silently bypassed. |
+| F2 | info | verified | src/aiv/lib/models.py:54 | correctness | `if normalized.startswith(member.value)` matches any string beginning with the member value character, so inputs like 'AB', 'AF', or 'A1' match member 'A' (EXECUTION). Since evidence class values are single capital letters and the class only has six members, collision risk is low in practice but the check is semantically wrong; equality comparison is required. |
+| F3 | medium | verified | src/aiv/guard/models.py:182-189 | correctness | The finalize() method sets compliance_level='NON-COMPLIANT' on failure but has no corresponding assignment in the else branch for PASS. The field retains its Pydantic default ('L1') regardless of which risk tier was actually validated, so a passed R3 packet reports the same compliance_level as a passed R0 packet. Consumers reading compliance_level from persisted GuardResult JSON cannot distinguish tier levels from pass outcomes. |
+| F4 | low | verified | src/aiv/lib/change.py:233 | correctness | The git range `f'{first_sha}^..HEAD'` appends a caret to denote the parent of the first tracked commit. When first_sha is the repository's initial commit, git fails (exit code 128: 'unknown revision') because there is no parent. The surrounding try/except catches the CalledProcessError and returns [], silently reporting zero untracked commits instead of raising or using an alternative range like `--root`. |
+| F5 | medium | verified | src/aiv/lib/validators/evidence.py:86-91 | correctness | When claim.artifact.link_type is 'github_actions' or 'external' the method hits `pass` and returns no findings. The performance benchmark check (E013) and UI state-transition check (E012) are nested inside the elif branches that are never reached once the early pass fires. A Class A claim describing a UI change or performance improvement linked to a CI run will never trigger E013 or E012, allowing claims that lack differential benchmarks or state-transition artifacts to pass unchallenged. |
+| F6 | info | verified | src/aiv/cli/main.py:1237 | correctness | The close command runs `git commit --no-verify -m <commit_msg>` for the packet commit. This intentionally avoids circular validation (the packet cannot gate itself), but it creates a compliance gap: a malformed or incomplete verification packet can be committed to the repository without any hook-level structural check. No secondary validation of the packet before --no-verify commit was observed in the close command path. |
+| F7 | low | verified | src/aiv/guard/runner.py:249-253 | correctness | The condition `if not has_optional and not missing` emits the E-METH error only when no other required sections are already flagged as missing. When a packet omits both required sections and the methodology section, the methodology-specific diagnostic is swallowed; reviewers see only the generic missing-section errors and must infer the methodology gap rather than receiving a targeted message. |
+| F8 | high | verified | tests/unit/test_validators.py:608 | correctness/logic | The assertion on line 608 reads: `assert artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]`. The test comment (line 607) says 'Claims 2 AND 3 should NOT have consumed the same artifact'. With `or`, the assertion passes whenever EITHER claim 2 OR claim 3 differs from claim 1 — e.g., if artifacts = ["src/handler.py", "src/handler.py", "default"], then `False or True = True` and the test PASSES despite claim 2 incorrectly receiving the unlinked artifact. A partial bug where unlinked evidence is applied to the first two claims but not the third is silently ignored. The correct operator is `and`. |
+| F9 | medium | verified | tests/unit/test_svp.py:154-155 | correctness/logic | Line 154-155: `assert VerifierTier.from_elo(499) == VerifierTier.NOVICE` and `assert VerifierTier.from_elo(500) == VerifierTier.COMPETENT`. But line 387-388 (`test_initial_rating`): `r = VerifierRating(verifier_id='user1')` (elo_rating defaults to 500) followed by `assert r.tier == VerifierTier.NOVICE`. Additionally line 883-886 (`test_starts_at_500`): `calculate_rating('new-user', [])` also asserts `tier == VerifierTier.NOVICE` at elo=500. Since `from_elo(500)` is COMPETENT, the initial tier at ELO 500 is inconsistent: either the constructor must call `update_tier()` (making initial tier COMPETENT), or the `from_elo` threshold must be `> 500` for COMPETENT (making `from_elo(500)` return NOVICE). One of these two test groups encodes a wrong boundary, meaning the tier display is incorrect for freshly created ratings. |
+| F10 | low | verified | tests/unit/test_auditor.py:365 | correctness/logic | In `TestAutoFix.test_fix_commit_pending`, line 365 calls `p.read_text(encoding='utf-8')` but the return value is never stored or asserted. The comment on line 366 says 'In a non-git context, commit SHA won't be found, so pending stays — Just verify the auditor didn't crash', yet the code reads the file without checking whether `pending` was actually preserved or replaced. The stated purpose of the test (verify auto-fix logic ran) is not validated by any assertion about file content; only `result.packets_scanned == 1` (line 368) is checked, which is unrelated to the fix behavior. |
+| F11 | low | verified | tests/unit/test_coverage.py:120 | correctness/logic | The method `TestAntiCheatDeletedFiles.test_multi_hunk_line_numbers` (line 120-143) is documented as 'Line numbers should be correct across multiple hunks.' The diff passed to `scanner.scan_diff` contains two hunks and one removed assertion (`-    assert result > 0`). The only assertion is `assert len(deleted) >= 1` (line 143), which only checks that the finding was created. No assertion is made about `deleted[0].line_number` or any line-number field. The test cannot distinguish a correct line-number from a wrong one, failing to validate the stated invariant. |
+| F12 | low | verified | tests/integration/test_svp_full_workflow.py:247 | correctness/logic | In `test_validate_incomplete_session_fails` (line 244-250), after asserting `result.returncode == 1`, the test immediately calls `output = json.loads(result.stdout)` on line 247. If the `aiv svp validate` command exits 1 due to an unhandled exception or prints a plain-text error instead of JSON, this line raises `json.JSONDecodeError` — a different exception class than `AssertionError` — making the failure signal misleading and the actual error hard to diagnose. The same pattern appears in `test_validate_missing_falsification_fails` at line 309. The test implicitly assumes the CLI always emits valid JSON to stdout on failure, but that assumption is not separately validated. |
+| F13 | info | verified | tests/unit/test_pre_commit_hook.py:159 | correctness/logic | The helper `_mock_main` (line 108-122) patches `aiv.hooks.pre_commit._load_hook_config` to inject controlled config. `test_functional_plus_packet_validates` (line 157-172) calls `main()` directly, patching `_staged_files`, `_write_safety_snapshot`, `_run_git`, `_validate_packet`, and `_get_submodule_paths`, but NOT `_load_hook_config`. If the working directory during the test run contains an `.aiv.yml` with custom `functional_prefixes`, `main()` will use those prefixes instead of defaults, potentially producing a different exit code than expected. The test passes incidentally when no `.aiv.yml` is present (defaults are used), but the isolation is incomplete. |
+| F14 | high | verified | src/aiv/guard/runner.py:191-204 | path-traversal | The only guard is `if not file_path.startswith('.github/')`. A PR body value such as `.github/x/../../../../../../etc/passwd` satisfies the prefix check while the subsequent `Path(file_path).exists()` / `resolved.read_text()` at lines 199-200 follow every `..` component, allowing reads of files outside the repository tree. No canonicalization (`Path.resolve()` + boundary check) is performed. |
+| F15 | high | verified | src/aiv/lib/validators/links.py:163-176 | ssrf | `_head_check(url)` passes any URL string from packet evidence links directly to `urllib.request.urlopen` without validating the scheme or host. Python's urllib honours `file://`, `ftp://`, and plain HTTP to internal addresses. When `audit_links=True` (exposed as `--audit-links` in `aiv check`), an attacker-controlled packet can include `http://169.254.169.254/latest/meta-data/` or `file:///etc/shadow` and the validator will issue a real network/file request. No allowlist of permitted schemes or hosts exists. |
+| F16 | low | verified | src/aiv/cli/main.py:639-700 | injection | `_detect_git_context()` at line 640 extracts `owner` and `repo` from the git remote URL via `re.search(r'[:/]([^/]+)/([^/.]+?)(?:\.git)?$', url)`. The character class `[^/]+` for owner (and `[^/.]+` for repo) permits `?`, `#`, `@`, and other URL-structural characters. These values are interpolated verbatim into GitHub API URLs at lines 683 and 714 (`f"https://api.github.com/repos/{owner}/{repo}/actions/runs?..."`) without percent-encoding. A crafted git remote URL can inject query parameters or fragment identifiers that alter the effective API endpoint. |
+| F17 | medium | verified | src/aiv/cli/main.py:1233-1241 | authz | At line 1237 the `close` command invokes `git commit --no-verify -m <msg>` to commit the Layer 2 verification packet it just generated. The protocol's stated goal is non-bypassable enforcement via pre-commit and pre-push hooks. Committing the packet itself with `--no-verify` means the packet commit is never validated by the hook pipeline: the hook's packet-content validation (`_validate_packet`) and atomic-commit rules are silently skipped for every `aiv close` invocation. The pre-push hook (layer 2) would catch this only if layer-2 evidence coverage is absent, but since the commit is the packet itself, the push hook also passes. |
+| F18 | low | verified | src/aiv/cli/main.py:1879 | injection | `subprocess.run(["git", "add", str(file), str(packet_path)], ...)` at line 1879 (and `["git", "add", str(packet_path)]` at line 1233) omit the `--` separator. The `file` argument is a `typer.Argument` Path taken directly from the CLI; a caller passing a path that begins with `-` (e.g., `-p` or `--patch`) would cause git to interpret the string as a git-add flag rather than a filename. The same pattern appears for `git diff HEAD -- str(file)` calls at lines 1490–1500 which do include `--`, creating an inconsistency. |
+| F19 | high | verified | tests/unit/test_validators.py:427-479 | SSRF | TestLinkVitality at test_validators.py:419-544 demonstrates that LinkValidator(audit_links=True).validate(packet) calls urllib urlopen with URLs extracted directly from packet content. At line 430, the mock raises HTTPError using req.full_url taken from the packet's intent evidence_link; at line 433 monkeypatch.setattr('aiv.lib.validators.links.urlopen', _mock_urlopen) identifies the production call site as aiv.lib.validators.links.urlopen. Tests at lines 444-463 (200 OK), 465-479 (URLError), 482-495 (403), and 498-543 (dedup) all confirm real outbound requests are made to packet-derived URLs. A packet whose Class E link points to an internal metadata endpoint (e.g. http://169.254.169.254/latest/meta-data/) would be fetched when audit_links=True is configured. Default is audit_links=False (line 421), but the feature is fully exercised and offered as a CLI/API option. |
+| F20 | medium | verified | tests/unit/test_pre_commit_hook.py:308-314 | authz | test_hook_engine_uses_custom_config at test_pre_commit_hook.py:308-314 proves that main() consumes custom functional_prefixes loaded from .aiv.yml in the working directory. TestLoadHookConfig at lines 326-355 confirms _load_hook_config() reads the live (staged or unstaged) .aiv.yml from the current directory at commit time. A developer can include a .aiv.yml change in the same commit that sets functional_prefixes to an empty list or minimal set alongside functional code changes and no verification packet; the hook reads the modified config during that very pre-commit check, classifies the code files as non-functional, and exits 0 without enforcement. Lines 291-294 (test_custom_prefix_overrides_defaults) confirm that when custom_prefixes=('my_code/',) is active, src/bar.py is no longer functional. The hook provides no tamper-detection for config changes in staged files. |
+| F21 | low | verified | tests/integration/test_svp_full_workflow.py:51 | secrets | The _run() helper at test_svp_full_workflow.py:43-61 builds env={**__import__('os').environ, 'PYTHONPATH': str(PROJECT_ROOT), 'PYTHONUTF8': '1'} and passes it to every aiv svp subprocess. This spreads all parent-process environment variables—including CI secrets such as GITHUB_TOKEN, AWS credentials, and any injected vault values—into the tested subprocess. If the aiv module prints env vars in debug mode or on crash, secrets appear in test logs. The unusual __import__('os') form at line 51 (instead of a top-level import os) does not mitigate the spread; it still resolves to os.environ at call time. Other test files (test_cli_commit_skip.py:78-84, test_cli_init.py:44-51) omit env= entirely, implicitly inheriting all parent variables as well. |
+| F22 | info | verified | tests/unit/test_svp.py:625-630 | injection | test_ai_session_passes_with_test_code at test_svp.py:620-636 validates that AI adversarial sessions (session_type=SessionType.AI_ADVERSARIAL_TRIAGE) must provide test_code in FalsificationScenario. At lines 625-630, test_code='def test_expired_token():\n    assert login(expired) == False' stores raw executable Python code in the session JSON. Rule S016 (test_svp.py:608-638) enforces its presence for AI sessions, implying the field is intended for automated execution in the AI triage workflow. If the SVP subsystem eval()s or exec()s this field—or passes it to a test runner without sandboxing—arbitrary code supplied by an attacker who crafts or intercepts an AI session could execute on the validation host. UNVERIFIED: no test in scope demonstrates execution of test_code; the risk depends on production SVP implementation not covered by these test files. [runtime: Grep over src/ found no exec/eval/subprocess call on test_code field; session.py:252 only checks field presence. The injection risk is latent in the model design, not an active execution path in current production code.] |
+| F23 | high | verified | src/aiv/hooks/pre_commit.py:240 | doc-code-drift | pre_commit.py:240 prints 'REQUIRES: [A + B]' for R1; pipeline.py:183 enforces {A, B, E} (EvidenceClass.INTENT mandatory). Same error independently at .husky/pre-commit:99. Developers following the rubric will skip Class E evidence for R1 changes and be blocked by the pipeline without warning. |
+| F24 | high | verified | src/aiv/hooks/pre_commit.py:237 | doc-code-drift | pre_commit.py:237 prints 'REQUIRES: A + B + C + E + [D + F]' for R3. Bracket notation implies D and F are optional. pipeline.py:190-197 _TIER_REQUIRED[R3] = {A, B, C, D, E, F} with no optional carve-out. Same bracket notation appears independently at .husky/pre-commit:93. |
+| F25 | medium | verified | src/aiv/cli/main.py:514 | doc-code-drift | cli/main.py:514 emits '# AIV Verification Packet (v2.1)' in generate; line 1143 emits '# AIV Verification Packet (v2.2)' in close. guard/runner.py:224 accepts both. No changelog or schema diff between v2.1 and v2.2 was found in any read file. Developers using generate get v2.1; the change-lifecycle path produces v2.2. |
+| F26 | low | verified | src/aiv/cli/main.py:1236 | security-bypass | cli/main.py:1236-1241 runs 'git commit --no-verify' to commit the verification packet. pre_push.py:16 docstring states compliance is non-bypassable. The primary packet-generation command contradicts this guarantee by programmatically skipping every pre-commit and pre-push hook. |
+| F27 | medium | verified | src/aiv/lib/validators/pipeline.py:48 | doc-code-drift | pipeline.py:48-56 docstring enumerates stages 1-7, omitting 'Risk-Tier Evidence Requirements' implemented as Stage 5 at line 131. cli/main.py:323 references '8-stage pipeline' in quickstart. The docstring omission misleads contributors about what the pipeline enforces. |
+| F28 | info | verified | src/aiv/cli/main.py:1664 | logic-error | cli/main.py:1664 evaluates '"changed_symbols" in dir()'. dir() with no argument returns scope names but is unreliable for testing whether a specific local variable is bound in the current frame; locals() is the correct idiom. |
+| F29 | medium | verified | src/aiv/lib/evidence_collector.py:283 | stale-data | collect_class_b at evidence_collector.py:283 calls _run_git('rev-parse', 'HEAD') before the commit occurs. The SHA embedded in Class B GitHub blob permalinks equals the parent commit, not the SHA of the commit that introduces the changed files. The link content is accurate but the SHA is wrong. |
+| F30 | low | verified | src/aiv/lib/config.py:163 | doc-code-drift | HookConfig.functional_root_files at config.py:163 includes '.gitignore'. .husky/pre-commit:63 also includes '.gitignore' and '.env.example' in its IS_FUNCTIONAL regex. Neither .cursorrules nor any other developer-facing doc read during this audit documents these files as requiring verification packets. |
+| F31 | low | verified | src/aiv/guard/models.py:182 | doc-code-drift | GuardResult.finalize() at models.py:182-188 sets compliance_level='NON-COMPLIANT' when findings exist but leaves the field as its Pydantic default 'L1' on a clean pass. No code path assigns the string 'COMPLIANT'. Downstream consumers checking compliance_level == 'COMPLIANT' will always get a false negative. |
+| F32 | medium | verified | .github/workflows/ci.yml:67 | intent-drift | ci.yml:67 has 'if: github.event_name == push' on the protocol-audit job. pre_push.py:16 docstring describes this CI job as layer-3 defense that 'catches --no-verify push (server-side)'. PR branches are not covered by push-event CI; a --no-verify push on a PR branch is undetected until post-merge. |
+| F33 | info | verified | src/aiv/hooks/pre_commit.py:46 | duplicate-constant | Identical list literal ['.aiv/', '.github/aiv-packets/'] appears as PACKET_PREFIXES at pre_commit.py:46-50, pre_push.py:40-44, and auditor.py:51-55. Adding or renaming a packet storage path requires three independent edits with no mechanism to detect skipped updates. [runtime: Triplication confirmed: identical 3-element tuple at pre_commit.py:46-50, pre_push.py:40-44, auditor.py:51-55. Finding description cited wrong values ('.aiv/'); actual values are '.github/aiv-packets/VERIFICATION_PACKET_', '.github/VERIFICATION_PACKET_', '.github/aiv-packets/PACKET_'. Core claim (no shared source of truth) stands.] |
+| F34 | info | verified | src/aiv/lib/models.py:268 | logic-error | VerificationPacket.has_provenance_evidence at models.py:268-271 iterates self.claims for EvidenceClass.PROVENANCE. A packet with Class F in a standalone evidence section (reflected in evidence_classes_present) but lacking a PROVENANCE-typed claim object returns False, producing a false negative used by evidence.py:38 to gate E010 enforcement. |
+| F35 | medium | verified | tests/integration/test_svp_full_workflow.py:319-322 | doc/code drift | Docstring at line 319-322 reads: 'Phase 4 (ownership commit) is injected directly into the session JSON because it requires actual git operations that we mock here.' The actual test code at lines 380-403 calls `self._run("ownership", "42", ...)` — a full CLI subprocess invocation, not JSON injection. The stated rationale (requires git operations) is also contradicted by the CLI approach, which passes a literal SHA of 40 'a' characters without any git operations. |
+| F36 | medium | verified | tests/integration/test_svp_full_workflow.py:3-17 | doc/code drift | Module docstring lists phases 1-4 and describes Phase 4 as 'Ownership Lock (manual — tested via model injection)'. However: (1) the SVP protocol has 5 phases numbered 0-4 (Phase 0 = Sanity/AIV Guard check, confirmed by `SVPPhase.SANITY.value == "phase_0_sanity"` in test_svp.py:161 and validated via `phase_0_complete` assertions at line 408); (2) Phase 4 is exercised via `self._run("ownership", ...)` CLI subprocess, not model injection. The module-level description is stale from an earlier design. |
+| F37 | low | verified | tests/unit/test_pre_commit_hook.py:35-38 | doc/code drift | Method name at line 35 is `test_template_is_not_packet`. The assertion at line 38 is `assert _is_packet(".github/aiv-packets/VERIFICATION_PACKET_TEMPLATE.md") is True`. The inline comment (line 36-37) acknowledges the contradiction: '# Templates match the pattern — they ARE packets structurally'. The test name is the exact opposite of the behavior verified. A reviewer relying on the test name to understand `_is_packet` semantics would form a wrong mental model. |
+| F38 | medium | verified | tests/unit/test_models.py:296-305 | doc/code drift | Method docstring at line 297 reads: "'main' should NOT be mutable if excluded from custom set." The assertion at line 304 is `assert link.is_immutable is False`, meaning the URL IS mutable (not immutable). The inline comment '# still non-SHA, so still mutable' at line 303 describes the actual behavior correctly — a non-SHA ref remains mutable regardless of the custom mutable_branches set — but the docstring states the inverse. Anyone reading the docstring to understand immutability rules for custom configurations would conclude the opposite of what the code enforces. |
+| F39 | low | verified | tests/unit/test_auditor.py:370-381 | intent mismatch | TestAutoFix.test_fix_class_e_local_ref at line 370-381 calls `auditor.audit(tmp_path, fix=True)` on a packet with a plain-text Class E link. The comment at line 379 says 'even without git, falls back to "main"', meaning the auto-fix produces a URL containing `/blob/main/`. The test then asserts only that `https://github.com/` is present (line 380). However, a `/blob/main/` URL is exactly what the `CLASS_E_MUTABLE` rule detects as a violation (confirmed by `test_mutable_link_detected` at line 145-155 which flags `/blob/main/` as ERROR). The auto-fix test accepts output that the auditor's own rules would immediately re-flag as non-compliant, defeating the stated purpose of the fix feature. |
+| F40 | low | verified | tests/unit/test_auditor.py:243-244 | doc/code drift | Class docstring at lines 243-244 reads: 'These tests cover the auditor change in auditor.py#L251-L262 (CLASS_E_NO_URL severity escalation) and auditor.py#L276-L296 (evidence_section tracking).' Hard-coded line numbers in a test docstring pointing to a sibling source file become stale on any insertion or deletion in `auditor.py`. When they drift they mislead anyone debugging via the test descriptions. |
+| F41 | low | verified | tests/unit/test_coverage.py:36-40 | intent mismatch | Test name `test_r0_has_class_b_and_a` implies R0 generates only Class B and A evidence sections. But line 40 asserts `assert "### Class E" in result  # structurally required by parser`. The guard constant `REQUIRED_CLASSES["R0"] == ["A", "B"]` (confirmed by test_guard.py:449) does not list E as required for R0. The comment 'structurally required by parser' conflicts with the protocol-defined tier requirement, creating ambiguity about whether Class E is protocol-required or merely a template default for R0. The test name omits E entirely, making the requirement invisible. |
+| F42 | medium | verified | tests/unit/test_auditor.py:361-368 | doc/code drift | TestAutoFix.test_fix_commit_pending at line 361-368 calls `auditor.audit(tmp_path, fix=True)` then executes `p.read_text(encoding='utf-8')` at line 365 but discards the return value — no assertion is made on the file content. The comment at lines 366-367 says 'In a non-git context, commit SHA won't be found, so pending stays / Just verify the auditor didn't crash'. The test's stated purpose is to verify the auto-fix for COMMIT_PENDING, but it only confirms the auditor did not raise an exception. Whether the file was modified, left unchanged, or corrupted is completely unverified, making this a non-test for its declared intent. |
+| F43 | critical | verified | src/aiv/hooks/pre_commit.py:212-214 | error-handling | _validate_packet wraps the entire subprocess invocation in a bare `except Exception` block and returns True on any error (line 212-214: `except Exception as exc: print(f'WARNING: Packet validation skipped ({exc})') return True`). Any transient error (broken pipe, missing Python, import failure) silently allows the commit through, defeating the enforcement guarantee stated in the provisional intent. |
+| F44 | high | verified | src/aiv/guard/github_api.py:116-117 | error-handling | In `list_pr_files`, when `_request` raises `GitHubAPIError` the loop breaks immediately (line 116-117: `except GitHubAPIError: break`). The caller receives whatever pages were fetched before the error with no indication of truncation. The guard then validates scope inventory and critical-surface detection against an incomplete file list, potentially allowing uncovered files to escape evidence requirements. |
+| F45 | low | verified | src/aiv/guard/github_api.py:159-160 | error-handling | In `list_run_artifacts`, when `_request` raises `GitHubAPIError` on any page the loop breaks (line 159-160: `except GitHubAPIError: break`). The `_inspect_class_a_run` caller then searches the truncated list for the `aiv-evidence` artifact. A transient network error mid-pagination can cause a PASS on the artifact check even when the artifact exists only on a later page. |
+| F46 | high | verified | src/aiv/lib/validators/evidence.py:261 | dead-code | `validate_file_type_triggers` is defined at `evidence.py:261` but is not invoked anywhere in `ValidationPipeline.validate` (`pipeline.py:69-177`), `EvidenceValidator.validate` (`evidence.py:29-52`), the guard runner (`runner.py`), or any CLI command. Database schema changes, dependency bumps, API schema changes, and Dockerfile changes never trigger the Class D requirement, making all four trigger rules (lines 275-301) permanently inactive. |
+| F47 | high | verified | src/aiv/lib/evidence_collector.py:283-285 | error-handling | `collect_class_b` calls `_run_git('rev-parse', 'HEAD')` and falls back to `head_sha = 'unknown'` on failure (lines 283-285). All subsequent permalink URLs are assembled with this literal string (e.g. `https://github.com/org/repo/blob/unknown/src/foo.py#L1-L20`), producing evidence that looks syntactically valid but resolves to a 404. The caller has no way to detect the degradation. |
+| F48 | medium | verified | src/aiv/cli/main.py:1237 | error-handling | The `close` command stages the Layer 2 packet and then runs `git commit --no-verify -m commit_msg` (line 1237). The pre-commit hook's Rule 6 (packet-only update) would pass cleanly without `--no-verify`, so the flag is unnecessary and also bypasses any other hooks (e.g., third-party linters). The tool that enforces non-bypassability unconditionally bypasses its own gate. |
+| F49 | high | verified | src/aiv/cli/main.py:1085 | error-handling | Inside the `close` command, the loop that reads each evidence file to extract claims and Class B refs catches all exceptions with a bare `except Exception: pass` (line 1085). A corrupt, missing, or permission-denied evidence file causes the Layer 2 packet to be generated with no claims extracted from it. The fallback at lines 1101-1106 substitutes a generic 'Changes to file X are verified by collected evidence' claim, which is untestable boilerplate rather than the real claims from the evidence file. |
+| F50 | medium | verified | src/aiv/lib/change.py:82 | error-handling | `load_change` catches `(json.JSONDecodeError, Exception)` (line 82), meaning disk full, permission denied, or partial-write corruption all produce `None` — indistinguishable from 'no active change'. In `pre_commit.py:381-382`, `_has_active_change()` calls `load_change()` and treats `None` as 'no active change', which causes the hook to fall through to legacy rules and potentially block commits that should have been allowed in change-context mode. |
+| F51 | medium | verified | src/aiv/hooks/pre_commit.py:65-71 | error-handling | The `_run_git` helper at lines 55-71 runs git and returns `result.stdout.strip()` without checking `result.returncode`. When git is not installed, the working directory is not a repo, or the command fails, the function returns an empty string. Downstream callers like `_staged_files` (line 75) treat an empty string as 'nothing staged' and return an empty list, causing the hook to exit with code 0 and allow the commit. |
+| F52 | medium | verified | src/aiv/lib/evidence_collector.py:249-255 | error-handling | `_run_git` in `evidence_collector.py` (lines 249-255) similarly returns empty string on any git failure. `collect_class_c()` calls `_run_git('diff', '--cached')` and `_run_git('diff', '--cached', '--name-status')` — on failure both return empty strings, so `class_c_data` reports no test files modified, no assertions removed, and `anti_cheat_clean=True`, producing falsely clean Class C evidence. |
+| F53 | medium | verified | src/aiv/guard/github_api.py:188 | error-handling | In `get_file_content` (line 188), `base64.b64decode(data['content'])` is called with no exception handling. The GitHub API can return truncated or padded base64 when content is large. `base64.b64decode` raises `binascii.Error` (a subclass of `ValueError`) for invalid padding, which is not caught in `get_file_content` or its callers in `canonical.py`. This propagates as an unhandled exception and crashes the guard run. |
+| F54 | low | verified | src/aiv/lib/evidence_collector.py:622-626 | error-handling | At lines 622-626, for every node found by the outer `ast.walk(tree)`, the code runs another full `ast.walk(tree)` to find its parent ClassDef. For a file with N AST nodes, this is O(N²). Additionally, `node in ast.iter_child_nodes(parent)` uses object identity, so methods of a class nested inside a function will not find their ClassDef parent, silently receiving no class prefix and producing incorrect symbol names in the Class B evidence. |
+| F55 | low | verified | src/aiv/hooks/pre_commit.py:117-140 | resource-handling | _write_safety_snapshot creates a new timestamped directory under `.cache/bb-safety-snapshots/` on every pre-commit run (line 119-121) but there is no cleanup, rotation, or size-limit mechanism anywhere in the codebase. In an active repository, every commit attempt (including rejected ones) generates a snapshot containing full diffs and untracked file copies, which will accumulate without bound. |
+| F56 | low | verified | src/aiv/lib/auditor.py:492 | error-handling | In `_check_evidence`, the EVIDENCE_MUTABLE_LINK finding is created with `auto_fixable=True` (line 492) regardless of whether `commit_sha` is None. The `_apply_fixes` method (line 667) checks `short_sha = commit_sha[:7] if commit_sha else None` and silently skips the fix when `short_sha` is None. So `auto_fixable=True` is reported to the user, but `--fix` mode silently does nothing for evidence files when their SHA is unknown. |
+| F57 | low | verified | src/aiv/guard/models.py:123 | dead-code | `GuardResult` initialises `compliance_level='L1'` (line 123). `finalize()` only updates it to `'NON-COMPLIANT'` on BLOCK findings (line 186). When there are WARN findings but no BLOCK findings, the result is PASS with `compliance_level='L1'` no matter how many warnings exist. There is no code path that computes a graduated compliance level ('L2', 'CONDITIONAL', etc.) from the actual findings. |
+| F58 | low | verified | src/aiv/lib/auditor.py:115-117 | error-handling | `_get_introducing_commit` splits `stdout.strip()` on newlines and returns `shas[-1]` (line 117: `return shas[-1] if shas and shas[-1] else None`). If git outputs trailing whitespace or an unexpected error message as the last line, the function returns that garbage string as a commit SHA. Callers use this SHA to build GitHub URLs and to decide `auto_fixable` status, propagating the invalid value silently. |
+| F59 | medium | verified | src/aiv/lib/validators/evidence.py:415 | dead-code | `EvidenceValidator._is_bug_fix` (evidence.py:415-440) checks `intent.verifier_check` and claim descriptions using word-boundary regex patterns. `auditor._is_bug_fix_claim` (auditor.py:134-152) uses a different approach: it strips 'auto-fix' and '--fix' before matching. The two implementations diverge: the auditor checks for FIX_NO_CLASS_F in commit history while the validator enforces Class F on bug-fix packets. The same packet could be assessed differently by each, creating inconsistent enforcement. |
+| F60 | low | verified | src/aiv/lib/config.py:284-285 | error-handling | `load_hook_config` wraps the entire YAML parse and config extraction in `try: ... except Exception: pass` (lines 263-285). Any error — malformed YAML, wrong type for `functional_prefixes`, I/O error — silently falls back to hardcoded defaults. This means a corrupt `.aiv.yml` that changes which files require packets is silently ignored, potentially causing the hook to incorrectly classify files as functional or non-functional without any diagnostic. |
+| F61 | medium | verified | tests/unit/test_auditor.py:365 | dead-code | Line 365: `p.read_text(encoding="utf-8")` is called with no assignment and the return value is immediately discarded. The comment on the next line reads 'Just verify the auditor didn't crash', but zero inspection of the file content occurs. The test was evidently intended to verify that the auto-fix wrote back to disk (or didn't corrupt the file), but the actual post-fix state is never examined. The test would pass even if the fix silently truncated the packet file to empty. Sibling test test_fix_class_e_local_ref (line 378) correctly captures and asserts on the read result. |
+| F62 | low | verified | tests/unit/test_cli_init.py:54-59,63-68,76-81,128-133,141-146,190-195 | error-handling | Six test methods call subprocess.run to invoke `aiv init` but neither assign the return value nor pass check=True: test_creates_packets_dir (lines 54-59), test_creates_evidence_dir (lines 63-68), test_installs_pre_commit_hook (lines 76-81), test_installs_pre_push_hook (lines 128-133), test_pre_push_hook_content_mentions_no_verify (lines 141-146), test_no_hook_skips_installation (lines 190-195). If aiv init exits non-zero (ImportError, unhandled exception, bad env), subprocess.run returns silently and the test proceeds to assert on filesystem side-effects, producing confusing AssertionError messages that point to the wrong root cause. Contrast: test_creates_aiv_yml (line 43) correctly captures the result and asserts result.returncode == 0. |
+| F63 | medium | verified | tests/integration/test_svp_full_workflow.py:45-61 | error-handling | The _run() helper (lines 43-61) calls subprocess.run with timeout=30 (line 49) inside a conditional-assert block but wraps none of this in a try/except. If any aiv svp subcommand hangs for 30 s, subprocess.TimeoutExpired propagates as an uncaught exception, bypassing the expect_ok assertion path at lines 55-60 and appearing as a raw traceback rather than a test failure. All nine test methods in TestSVPFullWorkflow invoke _run() one or more times, so a single hang corrupts the entire class run. The subprocess.CompletedProcess stdout/stderr that would help diagnose the hang is also lost because TimeoutExpired carries only cmd and timeout. |
+| F64 | medium | verified | tests/unit/test_cli_commit_skip.py:136-137 | error-handling | test_reason_in_methodology (lines 129-138): after calling _run_aiv_commit() with the return value discarded (lines 131-134), line 136 collects `evidence_files = list(evidence_dir.glob('EVIDENCE_*.md'))` and line 137 immediately accesses `evidence_files[0]` with no length assertion. If _run_aiv_commit fails (non-zero exit or dry-run writes nothing), evidence_files is an empty list and line 137 raises IndexError at runtime rather than a meaningful test assertion. Sibling test test_reason_in_class_a (line 124) correctly adds `assert len(evidence_files) == 1, f'Expected 1 evidence file, got {len(evidence_files)}'` before accessing index 0, confirming the missing guard is an oversight rather than design. |
+| F65 | low | verified | tests/unit/test_auditor.py:377 | dead-code | Line 377: `auditor.audit(tmp_path, fix=True)` is called with no assignment. The AuditResult (containing packets_scanned, packets_with_issues, findings) is silently thrown away. The test only inspects the rewritten file content (lines 378-381) and never verifies that the audit detected the expected finding before the fix or that packets_scanned==1 after. Compare test_fix_commit_pending (lines 363-368) which captures `result = auditor.audit(tmp_path, fix=True)` and asserts `result.packets_scanned == 1`. The discarded result means a regression where fix() produces zero findings or scans zero packets would go undetected. |
+| F66 | info | verified | tests/unit/test_validators.py:433,487 | error-handling | test_audit_links_404_blocks (line 433) and test_audit_links_403_blocks (line 487) construct `HTTPError(req.full_url, N, msg, {}, None)` where the fourth argument (hdrs) is an empty dict `{}`. urllib.error.HTTPError expects an http.client.HTTPMessage instance for hdrs; a dict lacks methods like getheader(), get_all(), items() that HTTPMessage provides. If LinkValidator or any intervening error-handling path calls any HTTPMessage-specific method on error.hdrs, the mock raises AttributeError instead of the expected behavior, silently corrupting the assertion. Additionally, fp=None (fifth argument) means calling error.read() or error.close() on the mock exception raises AttributeError — a risk if the validator uses the file-like interface of HTTPError. |
+| F67 | info | verified | tests/unit/test_validators.py:395,500 | dead-code | IntentSection is imported at module level (line 22: `from aiv.lib.models import ... IntentSection ...`). It is re-imported unnecessarily inside the _make_packet_with_url fixture body at line 395 (`from aiv.lib.models import ArtifactLink, IntentSection`) and again inside test_audit_links_deduplicates_urls at line 500 (`from aiv.lib.models import ArtifactLink, IntentSection`). The second occurrence of IntentSection in each of these two in-function imports is dead code — it rebinds a local name that shadows the already-available module-level binding without effect. Note ArtifactLink is absent from the module-level imports (lines 17-26) and IS needed in-function; only IntentSection is redundant. |
+| F68 | low | verified | tests/unit/test_cli_commit_skip.py:118-121,131-134 | error-handling | In test_reason_in_class_a (lines 118-121) and test_reason_in_methodology (lines 131-134) the result of `_run_aiv_commit(staged_repo, [..., '--dry-run'])` is not captured. _run_aiv_commit returns a subprocess.CompletedProcess; if aiv commit exits non-zero (e.g. tier-check rejects the R0 flag, or an import error), the failure is invisible and the test proceeds into evidence-file assertions, producing misleading failures. Unlike test_skip_checks_rejected_for_higher_tiers (line 92) and test_skip_checks_without_reason_fails (line 101) which both capture and assert on the return code, the two StampedInEvidence tests have no process-exit guard at all. |
+| F69 | high | verified | src/aiv/cli/main.py:1236-1237 | correctness | The close command runs `git commit --no-verify -m <msg>` for the packet commit. All pre-commit hook gates — including `aiv check` (Rule 1) and `aiv audit` (Rule 6) — are skipped. A structurally malformed, incomplete, or tampered verification packet can therefore be committed to the repository without any hook-level structural validation. Rule 6 of the hook was designed to allow packet-only commits, so --no-verify is unnecessary and actively circumvents the intended enforcement layer. |
+| F70 | medium | verified | src/aiv/svp/lib/validators/session.py:113 | correctness | `_validate_prediction` checks `if pred.predicted_complexity is None:` at line 113. In the SVPPrediction Pydantic v2 model, `predicted_complexity` is typed as `Complexity` without `Optional[...]` or a default of None. Pydantic raises a ValidationError before the session object is constructed if the field is absent, so the None branch is unreachable. S004 warnings are never emitted regardless of session content. |
+| F71 | medium | verified | src/aiv/guard/runner.py:383 | correctness | `_build_evidence_class_results()` assigns `valid=present` where `present` is a boolean indicating the evidence class was found in the packet. No independent check of artifact URL integrity, SHA pinning, or content correctness is performed. A Class A (Execution) entry with a broken URL, wrong SHA, or empty artifact field receives `valid=True` as long as the class letter appears in the packet, defeating the per-class validation gate. |
+| F72 | medium | verified | src/aiv/lib/models.py:132-133 | correctness | `from_url()` classifies a URL fragment as SHA-pinned if `len(ref) >= min_sha_length and all(c in '0123456789abcdef' for c in ref.lower())`. `min_sha_length` defaults to 7. A mutable git tag whose name consists entirely of hex characters and is ≥7 chars long (e.g., tag '1a2b3c4') will be treated as an immutable commit SHA, suppressing the immutability warning. The artifact's referent is mutable but the validator reports it as pinned. |
+| F73 | low | verified | src/aiv/svp/lib/rating.py:23-124 | correctness | `score_session()` iterates probe findings and falsification scenarios but contains no code path that appends `RatingEvent(event_type='bug_missed', ...)`. `RATING_POINTS['bug_missed'] = -25` is defined in models.py and `VerifierRating.bugs_missed` field exists, but `calculate_rating()` derives `rating.bugs_missed` from events whose type starts with 'bug_caught', not 'bug_missed'. As a result, no verifier ever accrues the -25 ELO penalty for missed bugs and `bugs_missed` is always 0. |
+| F74 | low | verified | src/aiv/lib/parser.py:585 | correctness | The branch `artifact_raw if artifact_raw.startswith('http') else ...` passes the full raw string to `ArtifactLink.from_url()` when it begins with 'http'. If the raw string contains trailing prose or embedded newlines (a multi-line content block), Pydantic URL validation rejects it and the except clause returns the raw string as a plain str — not an ArtifactLink. Downstream validators in EvidenceValidator and LinkValidator guard on `isinstance(artifact, ArtifactLink)` and skip SHA-pinning and immutability checks entirely for such artifacts. |
+| F75 | low | verified | src/aiv/guard/canonical.py:159-160 | correctness | `validate_canonical()` accesses `canonical_data['attestations'][0]` and checks its fields (verifier_id, timestamp, signature) without iterating over the list. Packets with multiple attestations — required for co-verification in AI_ADVERSARIAL_TRIAGE sessions — have only their first attestation validated. Subsequent attestations can be structurally invalid, unsigned, or reference nonexistent verifiers without triggering any error. |
+| F76 | medium | verified | src/aiv/lib/validators/pipeline.py:163-169 | correctness | In strict mode, `validate()` sets `result.status = ValidationStatus.FAIL` when warnings are present (line 163-169). `ValidationResult.is_valid` at models.py:307-309 returns `not self.blocking_errors` — it checks only blocking errors, not warnings or status. A caller that reads `result.is_valid` sees True while `result.status` is FAIL. CI integrations and hook runners that branch on `is_valid` will incorrectly allow a strict-mode warning-failing session through. |
+| F77 | low | verified | tests/unit/test_svp.py:155,389,885 | correctness/logic | test_verifier_tier_from_elo (line 155) asserts VerifierTier.from_elo(500) == VerifierTier.COMPETENT, establishing the COMPETENT boundary at ELO 500. test_initial_rating (line 388-389) asserts r.elo_rating == 500 AND r.tier == VerifierTier.NOVICE. test_starts_at_500 (line 883-885) repeats this with calculate_rating("new-user", []): elo_rating==500, tier==NOVICE. These tests are mutually contradictory: if from_elo(500) maps to COMPETENT, then a freshly created VerifierRating whose elo_rating is 500 must have tier COMPETENT, not NOVICE. test_apply_event_positive (line 392-399) confirms update_tier() is called on events: starting from ELO=500/NOVICE, adding 50 points yields ELO=550/COMPETENT — consistent with from_elo(550)==COMPETENT but inconsistent with the initial state where ELO=500 is already at the COMPETENT threshold. |
+| F78 | medium | verified | tests/unit/test_validators.py:608 | correctness/logic | test_unlinked_evidence_not_repeated_across_all_claims (line 588) intends to verify that a single unlinked evidence item is consumed only by the FIRST unenriched claim, leaving claims 2 and 3 unenriched. The key assertion at line 608 reads: `assert artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]`. With OR semantics, the assertion passes whenever at least one of the two remaining claims differs from claim 1. If the bug is that unlinked evidence is applied to claim 2 but NOT to claim 3 (artifacts[0]=="src/handler.py", artifacts[1]=="src/handler.py", artifacts[2]=="See Evidence"), then artifacts[2] != artifacts[0] is True and the OR passes — even though claim 2 incorrectly received the artifact. The correct predicate is AND: `assert artifacts[1] != artifacts[0] and artifacts[2] != artifacts[0]`. |
+| F79 | medium | verified | tests/unit/test_auditor.py:875-884 | correctness/logic | test_evidence_dir_none_skips_scan (line 875) creates packets_dir without writing any packets, then calls auditor.audit(packets_dir, evidence_dir=None) and asserts result.packets_scanned == 0 and len(result.findings) == 0. Both assertions are trivially satisfied because packets_dir is empty — no packets are available to scan regardless of what evidence_dir=None does. The test never places any evidence files in a real evidence directory and verifies they are skipped, so it does not actually demonstrate that evidence_dir=None causes evidence scanning to be bypassed. A correct test would populate evidence_dir with at least one evidence file, pass evidence_dir=None, and confirm the evidence file is NOT scanned. |
+| F80 | medium | verified | tests/integration/test_svp_full_workflow.py:247,309 | correctness/logic | test_validate_incomplete_session_fails (line 247): after asserting result.returncode == 1, the test immediately calls `output = json.loads(result.stdout)`. If the CLI emits a Python traceback, an exception message, or any non-JSON text to stdout on error, this raises json.JSONDecodeError at line 247 instead of a meaningful AssertionError, hiding the real diagnostic. The same pattern occurs at line 309 in test_validate_missing_falsification_fails. In contrast, test_validate_no_session_fails (line 252-255) only asserts returncode and never parses stdout, showing the inconsistency. A guard such as checking stdout starts with '{' or wrapping json.loads in a try/except with a descriptive re-raise would make failures diagnosable. |
+| F81 | low | verified | tests/unit/test_cli_commit_skip.py:119,132 | correctness/logic | test_reason_in_class_a (line 116) and test_reason_in_methodology (line 129) call `_run_aiv_commit(staged_repo, [..., "--dry-run"])` without capturing or checking the return value. If the command exits non-zero (e.g., because aiv commit rejects the invocation for any reason), the test proceeds to `list(evidence_dir.glob("EVIDENCE_*.md"))` and fails with `AssertionError: Expected 1 evidence file, got 0` — with no indication that the command itself failed. The actual error (returncode != 0, stderr message) is silently discarded. Both tests should assert `result = _run_aiv_commit(...); assert result.returncode == 0, result.stderr` before checking evidence file side effects. |
+| F82 | low | verified | tests/unit/test_pre_commit_hook.py:157-172 | correctness/logic | The _mock_main helper (line 108-122) patches _load_hook_config to return default prefixes, ensuring _is_functional works deterministically. test_functional_plus_packet_validates (line 157-172) patches _staged_files, _write_safety_snapshot, _run_git, _validate_packet, and _get_submodule_paths, but does NOT patch _load_hook_config. If the test runner's working directory contains a .aiv.yml with a functional_prefixes list that excludes src/ (e.g., only listing backend/), then _is_functional("src/aiv/cli/main.py") returns False, the commit is treated as docs-only, _validate_packet is never called, and main() returns 0. The test expects 1, so it would fail — but the failure reason (wrong config context) would be invisible. If the custom config happens to include src/, the test passes correctly but for an environment-dependent reason. |
+| F83 | high | verified | src/aiv/guard/runner.py:191 | path_traversal | Line 191 checks `file_path.startswith('.github/')` on the raw string extracted from PR body text, but no path normalization is applied before the check. A value such as `.github/../../etc/passwd` passes the startswith guard, then `Path(file_path).read_text()` at line 200 reads the resolved path outside the repository root. The extracted value is attacker-controlled (PR body). |
+| F84 | medium | verified | src/aiv/lib/validators/links.py:169 | ssrf | The static method `_head_check(url)` calls `urlopen(req, timeout=_LINK_CHECK_TIMEOUT)` where `url` is taken directly from claim artifact URLs parsed from a user-supplied verification packet. No allowlist, scheme restriction, or private-IP-range check is applied. When `--audit-links` is passed, this enables requests to localhost, cloud metadata endpoints (169.254.169.254), or internal services. |
+| F85 | medium | verified | src/aiv/cli/main.py:683 | ssrf | Function `_fetch_latest_ci_url` at line 683 constructs `url = f'https://api.github.com/repos/{owner}/{repo}/actions/runs?...'` where `owner` and `repo` are extracted from the git remote URL via regex at line 640-643. A crafted `.git/config` remote URL can inject path segments or query parameters. The same pattern appears in `_fetch_issue_title` at line 714. Neither function validates that owner/repo are safe GitHub identifiers before interpolating them into the request URL. |
+| F86 | medium | verified | src/aiv/guard/github_api.py:176 | injection | Line 176 constructs `url = f'{self.base_url}/repos/{ctx.owner}/{ctx.repo}/contents/{path}?ref={ref}'` without URL-encoding the `path` argument. A caller-supplied path containing `#`, `?`, `%`, or `/..` can alter the request path or query string. `ctx.owner` and `ctx.repo` are also embedded without encoding; in the GitHub Actions context these come from `GITHUB_REPOSITORY` (trusted), but `path` has wider caller surface. |
+| F87 | medium | verified | src/aiv/cli/main.py:1237 | authz | Line 1237 runs `['git', 'commit', '--no-verify', '-m', commit_msg]`, explicitly passing `--no-verify` which skips all configured pre-commit and commit-msg hooks. The AIV protocol installs a pre-commit hook (src/aiv/hooks/pre_commit.py) that enforces packet integrity. The primary user-facing command that commits packets therefore systematically bypasses the enforcement layer the protocol defines. |
+| F88 | low | verified | src/aiv/cli/main.py:843 | injection | Line 843 interpolates `owner`, `repo`, and `head_sha` into a GitHub URL embedded in generated markdown: `f'https://github.com/{owner}/{repo}/tree/{head_sha}'`. These values originate from the git remote URL (line 640-643) without sanitization. A repository remote configured with Markdown-special characters (e.g. `][evil` in owner) can break link syntax or embed unexpected markup in the generated verification packet document. |
+| F89 | info | verified | src/aiv/guard/github_api.py:88 | path_traversal | Line 85-88 reads `event_path = os.environ.get('GITHUB_EVENT_PATH', '')` and then calls `Path(event_path).read_text()` with no restrictions on the path value. In the intended GitHub Actions execution context this variable is controlled by the runner, but in local or CI environments where the variable is attacker-settable, this allows reading arbitrary files accessible to the process. |
+| F90 | medium | verified | tests/unit/test_validators.py:427 | SSRF | test_audit_links_404_blocks (line 427) mocks 'aiv.lib.validators.links.urlopen' and confirms the production LinkValidator calls urllib's urlopen with URLs extracted directly from user-supplied verification packet content (IntentSection.evidence_link). test_audit_links_deduplicates_urls (line 499) additionally shows that claim artifact URLs are also fetched. No test in the suite validates that internal or cloud-metadata URLs (e.g. http://169.254.169.254/, http://localhost:8080/) are blocked before the request is issued. The only guard is audit_links=False (default), confirmed by test_audit_links_off_skips_network (line 419), meaning callers who enable link auditing expose the host to SSRF. |
+| F91 | high | verified | tests/integration/test_svp_full_workflow.py:387 | authz | In test_full_journey_passes_validation (line 317) and test_ownership_records_commit (line 421), the '--verifier alice' CLI argument is stored as both session.verifier_id and ownership_commit.author_github_id. The S011 rule tested in tests/unit/test_svp.py:511 only checks that author_github_id matches session.verifier_id, but both values originate from the same user-supplied '--verifier' string with no cryptographic binding to git commit authorship or GitHub identity. Any actor can trivially satisfy S011 by passing identical self-chosen strings to --verifier across all SVP commands, forging any verifier identity. |
+| F92 | medium | verified | tests/unit/test_cli_commit_skip.py:116 | injection | test_reason_in_class_a (line 116) asserts that the raw --skip-reason CLI string appears verbatim in the generated markdown evidence file: 'assert reason in content'. test_reason_in_methodology (line 129) similarly asserts the string appears in the Methodology section. Neither test nor any other test in the file validates that reason values containing markdown structural characters (newlines, '---', '## Heading', '\| table \|', backtick fences) are escaped or sanitized before insertion, permitting content injection into the evidence file's structured markdown. |
+| F93 | medium | verified | tests/unit/test_auditor.py:370 | path-traversal | test_fix_class_e_local_ref (line 370) replaces a Class E link with the local reference 'AUDIT_REPORT.md — Finding L01', then asserts that after auditor.audit(tmp_path, fix=True) the file contains both 'https://github.com/' and the raw string 'AUDIT_REPORT.md'. This confirms the auto-fix code constructs a GitHub URL by concatenating the local filename without URL-encoding. No test validates behaviour for filenames containing '..', '%', '#', or other URL-special characters. A packet with a reference like '../../.env' would embed that string in the generated URL without sanitization. |
+| F94 | low | verified | tests/integration/test_svp_full_workflow.py:63 | authz | _session_path (line 63) constructs the session path as '.svp/session-pr{pr}.json' keyed solely on the integer PR number. No user identity, workspace hash, or access token is incorporated. test_probe_resume_merges_scenarios (line 522) confirms sessions are openly mutable by any caller: a second 'svp probe' invocation with a different verifier ID successfully merges scenarios into the existing session file. Two actors targeting the same PR number share one session, allowing one to overwrite or forge the other's phase records. |
+| F95 | low | verified | tests/integration/test_svp_full_workflow.py:51 | secrets | _run (line 43) builds the child-process environment as '{**__import__("os").environ, "PYTHONPATH": ..., "PYTHONUTF8": "1"}', spreading all host environment variables into the subprocess. The unusual inline __import__("os") pattern (rather than a top-level import) suggests an oversight. In CI pipelines where GITHUB_TOKEN, PYPI_TOKEN, or AWS_SECRET_ACCESS_KEY are injected as env vars, these secrets are propagated to every aiv subprocess invoked during the integration test suite, expanding the blast radius if the subprocess logs or forwards environment variables. |
+| F96 | critical | verified | .husky/pre-commit:61 vs src/aiv/cli/main.py:1879 vs src/aiv/hooks/pre_commit.py:342 | doc/code drift | `.husky/pre-commit:61` PACKET_PATTERN is `"^\.github/(aiv-packets/)?VERIFICATION_PACKET_.*\.md$"` — matches only VERIFICATION_PACKET_ prefix. `aiv commit` (main.py:1879) stages two files: the functional file and `EVIDENCE_*.md` (evidence_dir / evidence_filename). Bash hook Rule 2 (`count==2 && HAS_PACKET && IS_FUNCTIONAL`) requires HAS_PACKET to be non-empty, but EVIDENCE_*.md does not match the PACKET_PATTERN, so HAS_PACKET is empty. Bash Rule 5 (`IS_FUNCTIONAL && no HAS_PACKET`) then fires, blocking the commit. By contrast the Python hook at pre_commit.py:342 explicitly allows `len(evidence) == 1` as an alternative to a packet: `if count == 2 and (len(packets) == 1 or len(evidence) == 1) and len(functional) == 1`. The bash hook has never been updated to recognise the Layer 1 evidence-file convention, making it fully incompatible with the primary `aiv commit` workflow. |
+| F97 | medium | verified | .husky/pre-commit:61 vs src/aiv/cli/main.py:1132 vs src/aiv/hooks/pre_commit.py:49 | doc/code drift | `aiv close` at main.py:1132 sets `packet_filename = f"PACKET_{packet_name}.md"` — the prefix is `PACKET_`, not `VERIFICATION_PACKET_`. The bash hook pattern at .husky/pre-commit:61 only matches `VERIFICATION_PACKET_*`. So if a developer commits the packet generated by `aiv close` while Husky is the active hook, the commit is blocked with a spurious 'Rule 5: code without evidence' rejection. The Python hook at pre_commit.py:49 lists `".github/aiv-packets/PACKET_,"` as a valid prefix and handles it correctly. The bash hook was not updated when the two-layer packet naming convention changed to `PACKET_<name>.md`. |
+| F98 | high | verified | .husky/pre-commit vs src/aiv/hooks/pre_commit.py:381 | doc/code drift | Python pre-commit hook at pre_commit.py:381-382 has `if _has_active_change(): return 0` which allows any commit (including multi-file) when `aiv begin` has been called and a change context is open. The bash hook (.husky/pre-commit) has no equivalent check — it would block any commit of >2 files or a functional file without a packet regardless of whether `aiv begin` is active. The Two-Layer Architecture section (comment at pre_commit.py:321-325) explicitly describes this as an intentional design: `"if an active change context exists, allow the commit"`. The bash hook does not implement this, making it semantically incompatible with the `aiv begin`/`aiv commit`/`aiv close` recommended workflow. |
+| F99 | medium | verified | src/aiv/cli/main.py:1237 vs src/aiv/cli/main.py:969-979 | doc/code drift | The `close` command docstring at main.py:969-979 says it 'generates PACKET_<name>.md in .github/aiv-packets/, validates it, and commits it'. At main.py:1237 the actual commit call is `["git", "commit", "--no-verify", "-m", commit_msg]` — it uses --no-verify, bypassing the pre-commit hook. The docstring never mentions this bypass. The provisional intent states compliance is 'non-bypassable'; the core close command contradicts this by design. The Python pre-commit hook would in fact allow this commit (it is packet-only; `all_aiv` check at pre_commit.py:325 would pass), so --no-verify is also unnecessary. The omission from the docstring causes the tool to present itself as using enforcement while silently bypassing it. |
+| F100 | medium | verified | src/aiv/lib/validators/pipeline.py:49-56 vs pipeline.py:131 vs src/aiv/cli/main.py:324 | doc/code drift | The `ValidationPipeline` class docstring at pipeline.py:49-56 enumerates: '1. Parse 2. Structure 3. Links 4. Evidence 5. Zero-Touch 6. Anti-Cheat 7. Cross-Reference' — seven stages. The `validate()` method body has inline stage comments including 'Stage 5: Risk-Tier Evidence Requirements' at pipeline.py:131 (`tier_findings = self._check_tier_requirements(packet)`), renumbering Zero-Touch to Stage 6 through Anti-Cheat Stage 7 and Cross-Reference Stage 8. The quickstart output at main.py:324 says 'Validate a verification packet (8-stage pipeline)' — matching the code but not the class docstring. The missing stage 5 (Risk-Tier Evidence Requirements) is where E019/E020 findings originate; users consulting only the class docstring would not expect it. |
+| F101 | medium | verified | src/aiv/hooks/pre_push.py:15-16 vs .github/workflows/ci.yml:67 | doc/code drift | pre_push.py module docstring at lines 15-16: 'Defence-in-depth: 1. pre-commit hook, 2. pre-push hook, 3. CI protocol-audit — catches --no-verify push (server-side)'. The protocol-audit job in ci.yml is at line 64-83 and at line 67 has the guard `if: github.event_name == 'push'`. This means the protocol-audit job runs only on direct pushes to main, not on `pull_request` events. A developer who opens a PR whose commits used `--no-verify` and who also used `git push --no-verify` bypasses hooks 1 and 2, and the CI layer-3 (`aiv audit --commits 20`) does not run on the PR at all — it only runs after merge. The docstring's claim that 'CI catches even that' overstates the protection for the PR workflow. |
+| F102 | low | verified | .cursorrules:9 vs src/aiv/cli/main.py:1879 | doc/code drift | `.cursorrules:9` lists Step 2 as `git add <file> — Stage the file`, instructing the user to manually stage before `aiv commit`. `aiv commit` at main.py:1879 calls `subprocess.run(["git", "add", str(file), str(packet_path)], check=True, timeout=10)` internally, staging both the functional file and the generated evidence file itself. If a user follows .cursorrules and pre-stages the file, `aiv commit` will re-stage it (no-op) but also discovers the unstaged diff via `git diff HEAD` at line 1490 for the early-check step. Evidence collection via `collect_class_b` at line 1599 runs before `git add`, so the explicit pre-staging step in .cursorrules would change what diff is available. The discrepancy means the documented workflow and the actual execution model differ in the staging sequence. |
+| F103 | low | verified | src/aiv/lib/validators/pipeline.py:182 vs src/aiv/cli/main.py:1465-1649 | doc/code drift | pipeline.py:182 defines `RiskTier.R0: {EvidenceClass.EXECUTION, EvidenceClass.REFERENTIAL}` — R0 requires Class A (Execution) evidence. main.py:1465 restricts `--skip-checks` to R0 only. When skip_checks is True, main.py:1646-1649 emits: `### Class A (Execution Evidence)\n\n- Local checks skipped (--skip-checks).\n- **Skip reason:** {skip_reason}`. The parser detects the `### Class A` heading and reports Class A as present; the `_check_tier_requirements` validator at pipeline.py:229 then sees Class A present and does not emit E019. The quickstart at main.py:308-310 describes Class A as collecting 'Per-symbol test coverage (AST analysis)', implying real execution evidence; for R0+skip-checks a placeholder header substitutes with no actual execution artifact, silently satisfying the validator. |
+| F104 | high | verified | tests/integration/test_svp_full_workflow.py:321 | doc_code_drift | Docstring at lines 321-324 states: 'Phase 4 (ownership commit) is injected directly into the session JSON because it requires actual git operations that we mock here.' The actual code at lines 380-401 runs `self._run("ownership", "42", ...)` — the standard CLI path — and the inline comment even labels it '# Phase 4: Ownership via CLI'. The docstring was never updated after the implementation changed from JSON injection to CLI invocation. |
+| F105 | medium | verified | tests/integration/test_svp_full_workflow.py:10 | doc_code_drift | Module docstring at line 10 reads 'Phase 4: Ownership Lock (manual — tested via model injection)'. All three tests that exercise Phase 4 — test_full_journey_passes_validation (lines 380-401), test_ownership_records_commit (lines 421-467), and the probe-then-ownership flows — invoke `self._run("ownership", ...)` which is the CLI, not JSON injection. No test injects ownership directly into session JSON. |
+| F106 | high | verified | tests/unit/test_pre_commit_hook.py:36 | doc_code_drift | The test at lines 36-37 is named `test_template_is_not_packet` but its body asserts `_is_packet(".github/aiv-packets/VERIFICATION_PACKET_TEMPLATE.md") is True`. The assertion and the test name are logical opposites. An inline comment attempts to explain ('Templates match the pattern — they ARE packets structurally') but this makes the test name an outright misnomer rather than a nuanced distinction. Compare test_auditor.py:102-107 where `PacketAuditor.audit()` explicitly excludes TEMPLATE files (`packets_scanned == 1` with template present), creating a cross-subsystem inconsistency: the hook treats templates as valid packets while the auditor excludes them. |
+| F107 | medium | verified | tests/unit/test_cli_init.py:139 | doc_code_drift | The test `test_pre_push_hook_content_mentions_no_verify` at line 139 carries the docstring 'Claim 2: Pre-push hook catches commits that bypassed pre-commit via --no-verify.' The actual assertion at line 149 is `assert "--no-verify" in content, "Pre-push hook shim should document --no-verify bypass"`. The assertion message itself reveals the drift: it says 'document', not 'catch'. Verifying that the string '--no-verify' appears in the hook file content is a documentation check, not a behavioral enforcement test. The provisional intent requires 'non-bypassable' compliance; this test does not validate that property. |
+| F108 | medium | verified | tests/unit/test_guard.py:401 | doc_code_drift | The test `test_empty_body_fails` at lines 401-406 has the comment '# Empty body should fail (no packet header found)' which implies blocking (BLOCK) behavior. The assertion is `assert result.block_count >= 1 or result.warn_count >= 1`. The `or` means the test passes if only a WARNING is produced, which would not block a PR merge. Under the provisional intent, aiv-guard is the CI enforcement layer making compliance 'non-bypassable'; a warning-only outcome would allow the PR through. The docstring says 'fail' but the code permits a warn-only outcome. |
+| F109 | medium | verified | tests/unit/test_validators.py:366 | doc_code_drift | The test at lines 366-380 is named `test_r2_optional_d_and_f_info` with docstring 'R2 should produce INFO for missing optional D and F.' The input packet for R2 is missing both Class D and Class F. The assertion at line 379 is `assert len(info) >= 1  # At least D or F recommended`. The docstring says both D AND F should produce INFO, but `>= 1` is satisfied if only one of them fires. If the implementation only emits INFO for D (not F), the test passes despite the docstring's promise about F. The comment `# At least D or F recommended` acknowledges the weaker check, making the test name and docstring overstate coverage. |
+| F110 | medium | verified | tests/unit/test_auditor.py:359 | doc_code_drift | The class `TestAutoFix` at line 356 is described as 'Test the --fix mode auto-remediation.' The test `test_fix_commit_pending` at lines 359-368 calls `auditor.audit(tmp_path, fix=True)` on a packet with `pending` as the commit SHA, then asserts only `result.packets_scanned == 1`. The comment at lines 365-367 admits 'In a non-git context, commit SHA won't be found, so pending stays / Just verify the auditor didn't crash'. The test is labelled as an auto-fix test but validates only non-crashing, not that any remediation occurred. The 'fix' behavior is entirely untested. |
+| F111 | medium | verified | tests/unit/test_auditor.py:370 | intent_mismatch | The test `test_fix_class_e_local_ref` at lines 370-381 asserts `assert "https://github.com/" in fixed_body` and `assert "AUDIT_REPORT.md" in fixed_body`. The inline comment says 'even without git, falls back to "main"'. A URL containing `/blob/main/` is a MUTABLE branch reference — exactly the pattern detected by `CLASS_E_MUTABLE` (tested at test_auditor.py:145-155 as an ERROR). The auto-fix is tested as passing when it converts a plain-text reference to a `/blob/main/` URL, which would itself trigger a different auditor ERROR. The test does not assert SHA-pinning, contradicting the auditor's own invariant that Class E links must be immutable. |
+| F112 | low | verified | tests/unit/test_coverage.py:43 | doc_code_drift | The test at lines 43-54 is named `test_r1_adds_class_e`. However, `test_r0_has_class_b_and_a` at lines 36-42 also asserts `assert "### Class E" in result` for R0 (with comment '# structurally required by parser'). The assertions for R1 are identical to R0 with respect to Class E — both include B, A, E and exclude C. The name 'adds_class_e' falsely implies R1 is the tier where Class E first appears, obscuring that both R0 and R1 generate the same Class E section in their evidence templates. |
+| F113 | high | verified | src/aiv/hooks/pre_commit.py:155-214 | resource-leak | NamedTemporaryFile is created with delete=False at line 155 (tmp_path). A separate mkdtemp audit_dir is created at line 183. The outer except Exception at line 212 catches all subprocess exceptions but does NOT call Path(tmp_path).unlink() or shutil.rmtree(audit_dir) before returning True, leaving both temp resources on disk permanently. |
+| F114 | high | verified | src/aiv/lib/evidence_collector.py:249-255 | error-handling | The docstring at line 249 states 'Returns empty string on failure or timeout (never raises).' but the implementation at line 254 calls subprocess.run(..., timeout=30) with no try/except. Both subprocess.TimeoutExpired and FileNotFoundError (git not on PATH) will propagate uncaught to every call site that relies on the 'never raises' contract. |
+| F115 | high | verified | src/aiv/guard/github_api.py:51-76 | error-handling | _request (line 51) and _request_bytes (line 68) catch only HTTPError. urllib.request.urlopen raises URLError (the parent class) for DNS failures, connection refused, and SSL errors. These propagate uncaught through list_pr_files, get_workflow_run, and list_run_artifacts callers instead of being wrapped as GitHubAPIError, breaking the guard's error abstraction. |
+| F116 | medium | verified | src/aiv/guard/github_api.py:88 | error-handling | Line 88: event = json.loads(Path(event_path).read_text(encoding='utf-8')). If GITHUB_EVENT_PATH points to a malformed JSON file the guard crashes with an unhandled json.JSONDecodeError before any validation begins. No try/except wraps this call, and there is no fallback default. |
+| F117 | medium | verified | src/aiv/cli/main.py:1879,1233 | error-handling | Line 1879 in commit_cmd: subprocess.run(['git', 'add', ...], check=True, timeout=10). Line 1233 in close: subprocess.run(['git', 'add', str(packet_path)], check=True, timeout=10). CalledProcessError, TimeoutExpired, and FileNotFoundError all propagate as raw exceptions instead of user-friendly Typer Exit messages, inconsistent with the rest of the CLI which uses console.print + raise typer.Exit(1). |
+| F118 | medium | verified | src/aiv/cli/main.py:1664,1721 | error-handling | Line 1664: 'if lang_driver is not None and not skip_checks and "changed_symbols" in dir()'. Line 1721: 'class_c_data if tier_upper in ("R2", "R3") and "class_c_data" in dir() else None'. Using dir() to guard uninitialized local variables is an antipattern; if the surrounding if-branches are refactored, the string literals will silently fail to match, causing NameError at runtime instead of a controlled fallback. |
+| F119 | low | verified | src/aiv/guard/runner.py:381 | dead-code | Line 381: valid=present. EvidenceClassResult has a separate 'valid' field implying content validation, but _build_evidence_class_results unconditionally sets valid equal to present. No code path ever sets valid=False for a present item; the field carries no information beyond 'present' and is never consulted separately. The field is effectively dead. |
+| F120 | low | verified | src/aiv/guard/github_api.py:188,193 | dead-code | get_file_content at line 188 does 'import base64' and search_code at line 193 does 'import urllib.parse' inside the function body. Both are stdlib modules with no import cost; the deferred placement obscures dependencies and is inconsistent with the module-level import of json, os, and urllib.error. No conditional need exists for deferral. |
+| F121 | low | verified | src/aiv/cli/main.py:1489 | dead-code | commit_cmd imports 'import subprocess' at line 1414 within the same function scope. Eight lines later at line 1489 it re-imports as 'import subprocess as _sp' solely for _diff_check and _staged_check. The alias is never referenced after line 1513. The original 'subprocess' name is available throughout the function and could be used directly, making the aliased import dead weight. |
+| F122 | low | verified | src/aiv/lib/auditor.py:128-131 | dead-code | _LOCAL_FILE_PATHS = {'AUDIT_REPORT.md': 'AUDIT_REPORT.md', 'SPECIFICATION.md': 'SPECIFICATION.md'}. _can_pin_link and _pin_local_reference use this dict to auto-fix CLASS_E_NO_URL findings by building SHA-pinned GitHub URLs. In any repo that does not have files named exactly AUDIT_REPORT.md or SPECIFICATION.md, the auto_fixable flag is always False and the auto-fix logic in _apply_fixes is dead for all practical users. |
+| F123 | low | verified | src/aiv/lib/evidence_collector.py:620-626 | resource-handling | For each FunctionDef/AsyncFunctionDef/ClassDef node found in the outer ast.walk (line 616), a full second ast.walk(tree) is performed at line 623 to identify the parent ClassDef. For a file with N symbol nodes this is O(N²) AST traversals. No size limit is enforced on file_path before parsing, so a large generated file could cause measurable latency in the pre-commit critical path. |
+| F124 | medium | verified | tests/unit/test_auditor.py:365 | dead-code | Line 365: `p.read_text(encoding="utf-8")` is called but its return value is never assigned or asserted. The surrounding comment says 'Just verify the auditor didn't crash', but the only real assertion is `result.packets_scanned == 1` computed before the fix attempt. Whether the pending SHA was actually replaced in the file is never checked, so the auto-fix path is exercised but not validated. |
+| F125 | medium | verified | tests/unit/test_cli_commit_skip.py:119 | error-handling | In `test_reason_in_class_a` (line 119) and `test_reason_in_methodology` (line 131), `_run_aiv_commit(...)` is called but the `CompletedProcess` return value is discarded. If `aiv commit` exits non-zero the test does not detect failure immediately; it only surfaces later as 'Expected 1 evidence file, got 0', masking the real cause. Both tests verify skip-reason stamping — a gate that should first confirm the command succeeded. |
+| F126 | low | verified | tests/integration/test_svp_full_workflow.py:51 | dead-code | Line 51: `env={**__import__("os").environ, "PYTHONPATH": str(PROJECT_ROOT), "PYTHONUTF8": "1"}` uses a dynamic import inline because `os` is absent from the module-level imports (lines 19-27 list only json, subprocess, sys, Path, pytest). The pattern is functional but bypasses static analysis, making the `os` dependency invisible to linters and tooling. |
+| F127 | low | verified | tests/unit/test_auditor.py:419 | dead-code | Lines 419-421 (`test_audit_cli_runs`) and 435-436 (`test_audit_cli_exits_1_on_errors`) each do `import subprocess` and `import sys` inside the test body. The module-level imports (lines 8-11) include only `Path`, `patch`, `AuditSeverity`, and `PacketAuditor`. Local imports hide the dependency from static analysis and run the import machinery on every test invocation. |
+| F128 | low | verified | tests/unit/test_svp.py:676 | dead-code | Line 676: `from aiv.svp.lib.rating import calculate_rating, score_session` appears after the closing of all preceding test classes (TestEnums through TestSessionType), far from the module-level import block (lines 9-38). This breaks PEP 8 E402, surprises readers scanning imports, and means static analysis tools that scan only the top of the file will miss this dependency. |
+| F129 | low | verified | tests/unit/test_language_drivers.py:90 | error-handling | Lines 90-95: `try: from ... import TreeSitterDriver; _TREESITTER_AVAILABLE = TreeSitterDriver().available; except ImportError: _TREESITTER_AVAILABLE = False`. If the tree-sitter package is importable but `TreeSitterDriver().available` raises `AttributeError`, `RuntimeError`, or any other non-ImportError exception, the exception escapes the handler and prevents the entire test module from loading. All 31 tests in the file would fail with a confusing collection error rather than a skip. |
+| F130 | low | verified | tests/unit/test_pre_commit_hook.py:157 | error-handling | Lines 157-173: The test patches `_staged_files`, `_write_safety_snapshot`, `_run_git`, `_validate_packet`, and `_get_submodule_paths` — five of the six mocks applied by `_mock_main` — but omits `_load_hook_config`. The function reads `.aiv.yml` from the process working directory. If a `.aiv.yml` exists in the test runner's cwd (e.g., the repo root), the hook config differs from the defaults assumed by all other rule-engine tests, making this test environment-dependent. |
+| F131 | low | verified | tests/unit/test_cli_init.py:57 | error-handling | Lines 57-62 (`test_creates_packets_dir`), 65-69 (`test_creates_evidence_dir`), 78-85 (`test_installs_pre_commit_hook`), and several others call `subprocess.run([sys.executable, "-m", "aiv", "init", ...])` without storing or checking the return value. If `aiv init` fails, the test does not immediately surface the exit code; it fails later on the directory/hook existence assertion with a message that does not show why init failed. |
+| F132 | low | verified | src/aiv/lib/validators/anti_cheat.py:132-142 | logic-bug/operator-precedence | The counter guard is `line.startswith('+') and not line.startswith('+++') or not line.startswith('-') and not line.startswith('\\') and not line.startswith('diff ')`. Python evaluates `and` before `or`, so this parses as `(clause1) or (clause2)`. For a `+++ b/file.py` header: clause1 = `True and False` = False; clause2 = `True and True and True` = True (does not start with `-`, `\`, or `diff `); result = True, so `current_line` increments. The `+++` new-file header is not caught by the earlier `continue` blocks (only `diff --git` and `@@` lines have `continue`). Every `+++` line in the diff adds 1 to the running line number, producing off-by-one errors for all subsequent finding locations in that file. |
+| F133 | medium | verified | src/aiv/lib/models.py:306-309 | logic-inconsistency | `is_valid` is defined as `len(self.blocking_errors) == 0` (line 308-309), where `blocking_errors` filters `self.errors` by `Severity.BLOCK`. In the pipeline (pipeline.py:164-169), when `strict_mode=True`, `has_failures = len(all_errors) > 0 or len(all_warnings) > 0`, so warnings alone cause `status = FAIL`. Warnings are placed in `self.warnings`, not `self.errors`. Therefore a packet with only WARN-severity findings has `status == FAIL` but `is_valid == True`. Any library consumer that uses `result.is_valid` instead of `result.status` will incorrectly treat the packet as valid. |
+| F134 | high | verified | src/aiv/lib/validators/anti_cheat.py:203-209 | logic-bug/security-bypass | In `check_justification` the outer loop iterates over each `finding`. For each finding, the inner loop scans `packet_claims` for any Class F claim whose `justification or description` exceeds 20 chars. On the first such claim, `has_justification = True` is set and the inner loop `break`s, marking the current finding as justified. This means a single generic Class F claim (e.g., `description='All tests preserved, regression suite passing'`, 47 chars) satisfies EVERY anti-cheat finding regardless of the specific file or type. A developer can delete assertions in test_foo.py, add @pytest.mark.skip in test_bar.py, and escape all findings by including one non-specific Class F claim. The justification is not matched to specific findings. |
+| F135 | high | verified | src/aiv/guard/runner.py:336-365 | missing-check/logic-gap | After fetching `run_data` via `self.api.get_workflow_run(self.ctx, run_id)`, the guard checks only `run_data.get('head_sha')` for SHA match and then looks for an `aiv-evidence` artifact (lines 343-365). It never checks `run_data.get('conclusion')` (expected `'success'`) or `run_data.get('status')` (expected `'completed'`). A GitHub Actions workflow run that is still in-progress, cancelled, or failed (with a pre-failure artifact upload, e.g., if the evidence-collection step runs before a test failure step) will satisfy lines 364-365 `self.result.upsert_rule_result('A-002', 'PASS')` / `'A-005'`. A failed CI run can therefore provide passing Class A evidence, violating the core guarantee that execution evidence proves tests passed. |
+| F136 | medium | verified | src/aiv/svp/lib/validators/session.py:156-157,183-185 | logic-bug/incomplete-validation | In `_validate_trace`, the loop `for trace in session.traces` calls `return False` immediately after appending the first S006 error (line 157) or S015 error (line 185). If `session.traces` has N elements and the first has a missing `edge_case_tested`, only that one S006 error is collected; traces 2..N are never checked. Similarly for S015. A session with 3 traces all violating S006 would report exactly 1 error instead of 3. The `SVPValidationResult` returned by `validate_session` thus under-reports violations, potentially misleading the caller about the extent of non-compliance. |
+| F137 | medium | verified | src/aiv/lib/auditor.py:434-578 | logic-gap/missing-check | `_check_packet` (called for Layer 2 packets) includes: TODO remnants scan across evidence sections (lines 329-363), `classified_by: 'TODO'` detection (line 366-375), `blast_radius: TODO` detection (lines 377-387), numbered claims still TODO (lines 389-402). `_check_evidence` (called for Layer 1 evidence files from `.github/aiv-evidence/`) includes none of these four checks (lines 434-578). An evidence file with `classified_by: 'TODO'` or unresolved TODO placeholders inside evidence sections passes the auditor without any finding. The file format and fields are structurally identical, so the omission is an oversight. |
+| F138 | low | verified | src/aiv/svp/lib/rating.py:147 | logic-bug/metric-error | `rating.bugs_caught = len([e for e in all_events if e.event_type.startswith('bug_caught')])`. In `score_session`, both confirmed probe findings (`finding.is_confirmed_bug=True`, line 46-55) AND falsified falsification scenarios (line 62-74) emit `RatingEvent` with `event_type='bug_caught_medium'`. Both match `.startswith('bug_caught')`. A verifier with 0 confirmed bugs but 5 falsified scenarios would show `bugs_caught=5`, inflating the metric and the associated `VerifierTier` calculation. |
+| F139 | low | verified | src/aiv/lib/parser.py:584-586 | logic-bug/url-extraction | In `_enrich_claims_with_evidence`, line 584: `url = self._extract_url(artifact_raw) if not artifact_raw.startswith('http') else artifact_raw`. If `artifact_raw` starts with `http` but contains additional content (e.g., the regex extraction from `content[ref_pos:ref_pos+end_offset]` can include surrounding markdown text that starts with a URL), the entire multi-line string is passed directly to `ArtifactLink.from_url(url)` without URL normalization. Pydantic's `HttpUrl` validator then raises an exception caught at line 589 (`except Exception: artifact = artifact_raw`), leaving the claim with a raw string artifact that is never immutability-checked. `_extract_url` would have correctly extracted just the URL. |
+| F140 | low | verified | src/aiv/guard/canonical.py:231-235 | logic-bug/incomplete-error-reporting | Lines 231-235: `for cls_letter in required: if not any(e.get('class') == cls_letter for e in evidence_items): result.add_block('CT-002', ...); return False`. The `return False` after the first missing class exits the entire `validate_canonical` function. For an R3 packet missing classes C, D, and F, only the first alphabetically missing class is reported. The developer must fix and re-run to discover subsequent missing classes. The block is correctly raised, but the function gives incomplete diagnostic information. |
+| F141 | medium | verified | tests/unit/test_validators.py:608-610 | correctness/logic | The assertion `assert artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]` uses `or`, so the test only fails when BOTH claim-2 AND claim-3 duplicate the artifact. If claim-3 duplicates but claim-2 does not (or vice versa), the assertion passes — the defect being tested slips through. The surrounding comment at line 606-607 states 'Claims 2 and 3 should NOT have consumed the same artifact', which requires BOTH to differ from claim-1 and therefore demands `and`. The operator should be `and` to enforce `artifacts[1] != artifacts[0] and artifacts[2] != artifacts[0]`. |
+| F142 | medium | verified | tests/unit/test_svp.py:155,389-390 | correctness/logic | At line 155 `test_verifier_tier_from_elo` asserts `VerifierTier.from_elo(500) == VerifierTier.COMPETENT`, establishing that elo=500 falls in the COMPETENT tier. At lines 389-390 `test_initial_rating` asserts that a freshly constructed `VerifierRating(verifier_id='user1')` has `elo_rating == 500` AND `tier == VerifierTier.NOVICE`. These two assertions are contradictory: `from_elo(500)` returns COMPETENT, yet the object holding elo=500 is initialised as NOVICE. Either the initial elo should be <500 (in the NOVICE range), the COMPETENT boundary should be >500, or the constructor should derive tier via `from_elo`. As-is, calling `update_tier()` on a freshly created rating would immediately promote it to COMPETENT without any activity, which contradicts the intent that new verifiers are NOVICE. |
+| F143 | medium | verified | tests/unit/test_models.py:298-304 | correctness/logic | In `TestArtifactLinkConfig.test_default_branch_not_mutable_with_custom_set`, the docstring reads "'main' should NOT be mutable if excluded from custom set", implying `is_immutable` should be `True`. The assertion on line 304 is `assert link.is_immutable is False`, which states it IS mutable. The inline comment at that line then says 'still non-SHA, so still mutable', confirming the assertion intent. The docstring directly inverts the expected outcome: a reader following the docstring would expect `assert link.is_immutable is True`. This misleads maintainers about what the test verifies and could cause an incorrect inversion of the assertion during refactoring. |
+| F144 | low | verified | tests/unit/test_guard.py:408-425 | correctness/logic | The test named `test_valid_markdown_packet` builds a well-formed markdown AIV packet body and runs the guard. The sole assertion at line 424-425 is `assert result.canonical_enabled is False`, which only confirms that canonical JSON mode is disabled — it says nothing about whether the markdown packet actually passes validation. The test name implies the packet should be accepted, but the result's `block_count`, `warn_count`, and `overall_result` are never checked. A guard regression that blocks all markdown packets would leave this test green. |
+| F145 | info | verified | tests/unit/test_auditor.py:514-533 | correctness/logic | The helper at lines 514-533 produces output in the format `<sha>\n<file1>\n<file2>\n\n...` (SHA immediately followed by files, blank line between commits). The real `git log --format=%H --name-only` output inserts a blank line between the SHA line and the file list: `<sha>\n\n<file1>\n<file2>\n\n`. If `audit_commits` in the production code parses the actual git format (with blank line after SHA), the mock data in these tests does not reproduce it faithfully. The audit_commits tests would still 'pass' because mock_run replaces subprocess.run entirely, but the parser codepath exercised by the mock may differ from the one hit with real git output, leaving actual format-parsing bugs undetected. |
+| F146 | high | verified | src/aiv/guard/runner.py:191 | path-traversal | if not file_path.startswith(".github/"): ... resolved = Path(file_path) ... packet_content = resolved.read_text(encoding="utf-8") — a path like .github/../.env passes the prefix check but resolves outside .github/; no canonical-path check is performed before file read |
+| F147 | medium | verified | src/aiv/lib/validators/links.py:163 | ssrf | urlopen(req, timeout=_LINK_CHECK_TIMEOUT) where req = Request(url, method="HEAD") and url originates from ArtifactLink.url parsed from packet content; no scheme allowlist or host allowlist enforced; enables probing of internal/cloud-metadata endpoints when --audit-links flag is active |
+| F148 | medium | verified | .github/workflows/ci.yml:387 | injection | ACTOR="${{ github.actor }}" — expression interpolated directly into bash heredoc before shell evaluation; GitHub currently restricts usernames to alphanumeric+hyphen but reliance on that external constraint is fragile; correct pattern is to pass via env: variable |
+| F149 | low | verified | src/aiv/cli/main.py:1237 | authz | subprocess.run(["git", "commit", "--no-verify", "-m", commit_msg], ...) — the close command explicitly bypasses pre-commit hooks when writing the verification packet commit, creating a channel where hook enforcement is skipped for AIV-internal commits; if close is compromised or called outside normal flow, no hook checks run |
+| F150 | low | verified | src/aiv/guard/github_api.py:42 | ssrf | self.base_url = "https://api.github.com" is hardcoded, limiting SSRF scope; however owner and repo values derived from GITHUB_REPOSITORY env var are interpolated into URL paths (e.g. /repos/{owner}/{repo}/...) without path-segment sanitization — a malformed GITHUB_REPOSITORY value like owner/../../../ could alter API endpoint routing, mitigated only by GitHub's URL normalization |
+| F151 | medium | verified | tests/unit/test_validators.py:427-479 | SSRF | TestLinkVitality monkeypatches `aiv.lib.validators.links.urlopen` at line 433, proving the production code calls urlopen with the raw URL from the verification packet when audit_links=True. The test suite covers 200, 404, 403, URLError, and dedup cases but includes zero tests verifying that non-HTTPS schemes (file://, http://) or internal IP ranges (169.254.169.254, 10.x.x.x) are blocked. The factory at line 392-416 constructs packets from arbitrary URLs without host allow-list validation. An attacker who controls a verification packet Class E link can trigger SSRF against cloud metadata endpoints or internal services when a validator runs with audit_links=True. |
+| F152 | low | verified | tests/unit/test_models.py:87-89 | SSRF | TestArtifactLink.test_external_url_mutable at line 87 confirms that `ArtifactLink.from_url('https://example.com/some/page')` is accepted (classified as external, mutable=False) without rejection. No test covers file://, javascript:, gopher://, or http://169.254.169.254/ being rejected. Since LinkValidator (test_validators.py:427) feeds ArtifactLink URLs to urlopen, the absence of a scheme/host block test means those attack URLs can reach the network layer unchallenged. |
+| F153 | medium | verified | tests/integration/test_svp_full_workflow.py:51 | secrets | Line 51: `env={**__import__('os').environ, 'PYTHONPATH': str(PROJECT_ROOT), 'PYTHONUTF8': '1'}` — the entire ambient environment is copied into the subprocess invocation. In CI pipelines this includes GITHUB_TOKEN, NPM_TOKEN, AWS_SECRET_ACCESS_KEY, and similar secrets. If the aiv CLI subprocess encounters an error that dumps environment variables to stdout/stderr (captured at lines 57-61 and shown in assertion messages), those secrets appear in test failure output and CI logs. The fix pattern is to start from a minimal environment dict rather than inheriting os.environ wholesale. |
+| F154 | low | verified | tests/unit/test_auditor.py:370-381 | injection | test_fix_class_e_local_ref at lines 370-381 uses the packet text `AUDIT_REPORT.md — Finding L01` as the local reference. The inline comment at line 379 explicitly states 'falls back to main' when git is unavailable. The assertions at lines 380-381 only check `https://github.com/` prefix and that `AUDIT_REPORT.md` appears in the fixed body — they do NOT assert that a SHA is present and do NOT reject the mutable 'main' branch URL. The test therefore validates as correct the following two insecure outcomes: (1) a user-controlled filename is embedded in the generated URL without sanitization (enabling path-component injection such as `../../secrets`), and (2) the URL uses a mutable branch reference, defeating the immutability enforcement the auditor is supposed to enforce. |
+| F155 | low | verified | tests/unit/test_coverage.py:398-407 | injection | TestAIVConfigFromFile.test_invalid_yaml_raises_configuration_error at lines 398-407 tests only syntactically malformed YAML (mixed tabs/spaces causing a parse error). No test supplies a YAML object-injection payload such as `strict_mode: !!python/object/apply:subprocess.check_output [['id']]` to verify that yaml.safe_load (not yaml.load) is used. Similarly test_reads_custom_prefixes_from_yaml in test_pre_commit_hook.py:326-334 loads attacker-writable .aiv.yml content without an unsafe-loader guard test. If the production loader uses yaml.load with Loader=None, writing a crafted .aiv.yml to a repository under test would achieve arbitrary code execution on the developer's machine at hook or init time. |
+| F156 | medium | verified | tests/unit/test_svp.py:443-528 | authz | TestSessionValidator exercises rules S001–S016 using in-memory SVPSession objects constructed by _make_complete_session(). The integration tests in test_svp_full_workflow.py run each phase through the CLI. However, no test creates a forged .svp/session-pr{N}.json file directly on disk and then calls `svp validate` to verify it is rejected. Because session files are plain JSON with no cryptographic signature, an actor who can write to the repository's .svp/ directory can manufacture a fully compliant session record and pass the validation gate without performing any of the four SVP phases. The test suite provides no adversarial coverage for this bypass path. |
+| F157 | low | verified | tests/unit/test_cli_commit_skip.py:116-138 | injection | TestSkipReasonStampedInEvidence.test_reason_in_class_a at lines 116-127 and test_reason_in_methodology at lines 129-138 verify that the --skip-reason text appears verbatim in the generated evidence file. Neither test supplies a reason string containing markdown structure such as `\n## Class A (Execution Evidence)\n\n- pytest: 999 passed` to verify that injected headings do not create forged evidence sections in the rendered file. The evidence file is later audited by PacketAuditor which parses section headings; a forged Class A section from an injected skip-reason could satisfy tier requirements that the actual commit did not meet. |
+| F158 | medium | verified | src/aiv/lib/validators/evidence.py:261 | doc-code-drift/dead-code | EvidenceValidator.validate_file_type_triggers() at evidence.py:261 documents four trigger categories — SQL/migration files, dependency manifests (pyproject.toml, requirements.txt), API schemas (.proto, openapi), and infrastructure files (Dockerfile, k8s/) — each of which must demand Class D evidence when triggered. However, ValidationPipeline.validate() at pipeline.py:126-128 calls only self.evidence_validator.validate(packet), which dispatches to EvidenceValidator.validate() at evidence.py:29-52. That method calls _validate_claim_evidence per claim (line 34) and the bug-fix Class F check (line 38); validate_file_type_triggers is not invoked. The method requires a second parameter changed_files: list[str] (evidence.py:263) that the pipeline has no mechanism to supply: ValidationContext at pipeline.py:34-43 carries no changed_files field, and the pipeline never parses changed file paths out of the diff. The feature is also claimed as active in .github/aiv-packets/VERIFICATION_PACKET_CRITIQUE_FIXES.md:26 ('The EvidenceValidator.validate_file_type_triggers() method inspects changed file paths and demands Class D evidence...'), but primary-source inspection of the pipeline shows zero call sites. E021/E022 findings from this method are therefore never emitted in practice, and Dockerfile, .sql, .proto, and pyproject.toml changes silently bypass the Class D demand the method was designed to enforce. |
+| F159 | high | verified | src/aiv/lib/validators/pipeline.py:183 | doc-code-drift | _TIER_REQUIRED[RiskTier.R1] at pipeline.py:183 contains {EvidenceClass.EXECUTION, EvidenceClass.REFERENTIAL, EvidenceClass.INTENT} — three classes. The pipeline's _check_tier_requirements at pipeline.py:229-241 blocks with E019 for any missing member of this set. In contrast, the user-facing rubric installed by aiv init prints at hooks/pre_commit.py:242-243: '[R1] LOW RISK - Standard Logic, Features, Bug Fixes. REQUIRES: [A + B]' — omitting Class E entirely. The rubric's R2 line at pre_commit.py:239-240 reads 'REQUIRES: [R1] + [C + E]', which structurally implies E is a NEW requirement at R2, contradicting the pipeline's placement of E at R1. A developer following the installed hook's rubric for an R1 commit will submit a packet with only Classes A and B, which the pipeline blocks with 'Risk tier R1 requires Class E (Intent) evidence, but none was found.' The mismatch affects the primary user touchpoint (the pre-commit rubric installed by aiv init) and three additional documentation sources: .cursorrules:18-21, .husky/pre-commit:98-99, and cli/main.py:308-310 (quickstart). The canonical.py:24 guard (CI) independently enforces {A,B,E} for R1, meaning the mismatch is present in both validation layers. |
+| F160 | medium | verified | src/aiv/lib/validators/evidence.py:113 | doc-code-drift/rule-id-collision | Rule ID E020 is emitted at two distinct sites with unrelated meanings: evidence.py:113 raises E020 for 'Class A (Execution) evidence links to a code file, not a CI run' (severity WARN); pipeline.py:248 raises E020 for 'Risk tier X: Class Y evidence is recommended but not required' (severity INFO). Rule ID E021 likewise collides: evidence.py:334 raises E021 for 'Database changes detected — Class D must include schema diff' (severity WARN, file-type trigger); links.py:140 and links.py:152 both raise E021 for 'Evidence link unreachable (HTTP {status})' and 'Evidence link could not be reached' (severity BLOCK/WARN). All findings from all validators are merged into ValidationResult.errors/warnings/info at pipeline.py:86-176 without namespacing. Any downstream consumer — CI suppression rules, dashboard aggregations, audit filters — that keys on rule_id will conflate a dead URL error with a missing Class D trigger, or conflate a code-blob link warning with an optional-class recommendation. |
+| F161 | medium | verified | src/aiv/lib/validators/evidence.py:402 | doc-code-drift/logic-inconsistency | anti_cheat.py:207 evaluates justification_text = claim.justification or claim.description, accepting description as a fallback, and clears the finding when len(justification_text) > 20. evidence.py:397-412 (_validate_provenance) checks if is_test_related and not has_negative_framing and not claim.justification, emitting E011 WARN when claim.justification is absent — it does not fall back to description. A Class F claim with description='Tests are preserved because the rename was purely cosmetic and all assertions are intact' (68 chars) and justification=None satisfies check_justification (description > 20 chars, anti-cheat gate passes) but simultaneously triggers E011 WARN from _validate_provenance (justification field is None). In non-strict mode (pipeline.py:164-169), the WARN does not block the commit, so the anti-cheat gate clears while the evidence validator flags the same claim as inadequate. A developer resolving the E011 WARN by populating claim.justification would then have redundant text; a developer who leaves it as-is sees the anti-cheat gate clear while the evidence validator continues to warn. The two validators enforce the same property — Class F adequacy — with contradictory standards. |
+| F162 | low | verified | src/aiv/lib/validators/evidence.py:242 | doc-code-drift/missing-check | evidence.py:242-258: manual_state_keywords = ['sqlite3', 'psql', 'mysql', 'mongo', 'query']. The Zero-Touch check for Class D only scans claim.reproduction.lower() for these five strings, blocking with E018 on a match. The method docstring at evidence.py:231 explicitly states 'Verifier must NOT run manually (Zero-Touch)', implying broad coverage. However, a claim.reproduction containing 'kubectl exec -it pod -- sh', 'docker exec', 'ssh host', 'redis-cli', 'clickhouse-client', 'curl localhost:8080', 'awslocal dynamodb scan', or any non-DB manual step passes unchallenged. ZeroTouchValidator (zero_touch.py) handles the broader Zero-Touch mandate for reproduction instructions but does not specifically validate Class D claims' reproduction field against manual-execution patterns; there is no cross-validator coverage closure. The combination leaves Class D evidence with manual infrastructure or cache operations entirely outside the Zero-Touch enforcement perimeter despite the documented mandate. |
+| F163 | low | verified | tests/unit/test_pre_commit_hook.py:35 | naming-inversion | Method named `test_template_is_not_packet` at line 35 asserts `_is_packet('.github/aiv-packets/VERIFICATION_PACKET_TEMPLATE.md') is True`; the inline comment at line 37 confirms 'Templates match the pattern — they ARE packets structurally.' The method name declares the exact opposite of what the assertion verifies, making the test a misleading specification of hook behavior. |
+| F164 | medium | verified | tests/integration/test_svp_full_workflow.py:10 | stale-docstring | Module docstring line 10 reads 'Phase 4: Ownership Lock (manual — tested via model injection).' All Phase 4 coverage in the file invokes the CLI via `self._run('ownership', ...)` (lines 381-402 in test_full_journey_passes_validation, lines 439-460 in test_ownership_records_commit). No JSON-injection pattern exists anywhere in the file; the stated mechanism was never implemented. |
+| F165 | medium | verified | tests/integration/test_svp_full_workflow.py:321 | stale-docstring | The method docstring at lines 321-322 states 'Phase 4 (ownership commit) is injected directly into the session JSON because it requires actual git operations that we mock here.' The implementation at line 381 calls `self._run('ownership', '42', '--repo', ..., '--commit-sha', 'a'*40, ...)` — a live subprocess CLI invocation with a dummy SHA, not JSON injection. The docstring describes an approach that does not exist in the code. |
+| F166 | medium | verified | tests/unit/test_validators.py:298 | docstring-contradicts-assertion | Method `test_default_branch_not_mutable_with_custom_set` at line 297 has docstring (line 298) "'main' should NOT be mutable if excluded from custom set." The assertion at line 304 is `assert link.is_immutable is False`, meaning `main` IS mutable. The word 'NOT' in the docstring states the inverse of what the test verifies, making the expected behavior ambiguous to a reader. |
+| F167 | medium | verified | tests/unit/test_guard.py:408 | claim-not-verified | Test `test_valid_markdown_packet` (line 408) has inline comment 'Markdown-only should pass structure checks.' The sole assertion at line 424 is `assert result.canonical_enabled is False`. No assertion checks `result.block_count`, `result.warn_count`, or `result.overall_result`. The claimed validity check is absent; the test verifies only mode detection, not correctness. |
+| F168 | medium | verified | tests/unit/test_auditor.py:356 | claim-not-verified | Class docstring at line 357 says 'Test the --fix mode auto-remediation.' The method `test_fix_commit_pending` (lines 359-368) ends with an explicit comment: 'In a non-git context, commit SHA won't be found, so pending stays / Just verify the auditor didn't crash.' The only assertion is `result.packets_scanned == 1`. No remediated content (e.g., SHA replacement) is verified, so auto-fix correctness is untested. |
+| F169 | medium | verified | tests/unit/test_cli_init.py:139 | claim-not-verified | Test `test_pre_push_hook_content_mentions_no_verify` (line 139) has docstring 'Claim 2: Pre-push hook catches commits that bypassed pre-commit via --no-verify.' The assertion at line 149 is `assert '--no-verify' in content`, verifying only that the string literal appears somewhere in the generated hook shim file (likely a comment). The actual behavioral property — that the hook intercepts such commits — is not exercised. The test establishes documentation presence, not enforcement. |
+| F170 | low | verified | tests/unit/test_auditor.py:244 | stale-line-reference | Class `TestEvidenceTodoSeverity` docstring at lines 246-247 references 'auditor.py#L251-L262 (CLASS_E_NO_URL severity escalation) and auditor.py#L276-L296 (evidence_section tracking).' These line numbers are pinned to a historical version of auditor.py and will silently mispoint after any source refactoring, giving false audit trails to future reviewers. |
+| F171 | low | verified | tests/unit/test_models.py:97 | over-broad-assertion | Method `test_frozen_model` at line 97 uses `with pytest.raises(Exception)` when attempting to mutate a Pydantic frozen model. This catches any exception including unrelated bugs. The expected exception for a Pydantic frozen model is `ValidationError` or `TypeError`; using the bare `Exception` base class means any runtime error would make the test pass, obscuring whether the freeze mechanism specifically is working. |
+| F172 | medium | verified | tests/unit/test_pre_commit_hook.py:35 | cross-component-inconsistency | test_pre_commit_hook.py:35-38 asserts `_is_packet('...VERIFICATION_PACKET_TEMPLATE.md') is True`, so the hook gate accepts template files as valid packets. test_auditor.py:102-107 shows the auditor EXCLUDES templates: when one template and one real packet are present, `result.packets_scanned == 1`. A developer can therefore satisfy the pre-commit gate by committing a bare template file while the auditor skips it, leaving no actual evidence in the audit trail — a policy-enforcement gap in the non-bypassable compliance goal. |
+| F173 | high | verified | src/aiv/lib/evidence_collector.py:249 | error-handling-gap | Docstring at line 252 states 'Returns empty string on failure or timeout (never raises)' but the implementation at line 254 calls subprocess.run with timeout=30 and no try/except. If git is absent, FileNotFoundError propagates; if the 30-second timeout fires, subprocess.TimeoutExpired propagates. Callers such as collect_class_b (line 283), collect_class_c (line 457), and _get_test_file_provenance (line 499) all rely on this false contract and have no guard of their own. |
+| F174 | high | verified | src/aiv/guard/github_api.py:43 | error-handling-gap | Both _request (line 43) and _request_bytes (line 60) catch only urllib.error.HTTPError (an HTTP-level error) and re-raise it as GitHubAPIError. urllib.error.URLError (DNS failure, connection refused, connection reset, SSL error) is a parent class of HTTPError and is NOT caught. A network-level failure bypasses the except block and propagates as a raw URLError. list_pr_files (line 106) catches GitHubAPIError to break pagination but would crash on URLError; runner.py callers make no provision for it either. |
+| F175 | medium | verified | src/aiv/hooks/pre_commit.py:183 | resource-leak | At line 183, audit_dir = tempfile.mkdtemp(prefix='aiv-audit-check-') is created outside any try/finally. The matching cleanup shutil.rmtree(audit_dir, ignore_errors=True) and Path(tmp_path).unlink(missing_ok=True) appear at lines 194-195, BEFORE the returncode check, but are only reached on the normal execution path. If subprocess.run at line 187 raises subprocess.TimeoutExpired (timeout=60) or FileNotFoundError (aiv not on PATH), the outer except Exception at line 212 catches it and returns True, leaving both audit_dir and tmp_path as orphaned temp resources on disk. |
+| F176 | medium | verified | src/aiv/lib/evidence_collector.py:348 | error-handling-gap | collect_class_a calls _run(pytest_cmd, timeout=360) at line 348, _run([...ruff...]) at line 420, and _run([...mypy...]) at line 425. _run at line 258 makes no attempt to catch subprocess.TimeoutExpired or FileNotFoundError. The function body of collect_class_a has no top-level try/except either. A missing pytest/ruff/mypy installation or a 6-minute pytest timeout raises an unhandled exception that propagates through commit_cmd in cli/main.py, crashing aiv commit with a Python traceback rather than a user-facing error message. |
+| F177 | low | verified | src/aiv/guard/github_api.py:60 | dead-code | _request_bytes at line 60 is called exclusively from download_artifact_zip at line 169. download_artifact_zip is never invoked from runner.py: _inspect_class_a_run at lines 296-365 calls list_run_artifacts to find the aiv-evidence artifact, then immediately marks the rules as PASS at lines 364-365 without downloading or inspecting artifact contents. Both methods are unreachable from the guard's execution path. |
+| F178 | info | verified | src/aiv/guard/github_api.py:191 | dead-code | The search_code method (lines 191-202) is defined on GitHubAPI but is never called from runner.py or any other file in the audited surface. It imports urllib.parse lazily and queries the GitHub code-search API, but no guard pipeline stage references it. The method is unreachable from any call chain rooted at GuardRunner.run() or main() in runner.py. |
+| F179 | low | verified | tests/unit/test_cli_init.py:54-59,63-69,76-83,127-136,139-148,191-197 | error-handling | Six test methods call subprocess.run([sys.executable, '-m', 'aiv', 'init', ...]) and discard the return value without checking returncode. Examples: test_creates_packets_dir (line 54), test_creates_evidence_dir (line 63), test_installs_pre_commit_hook (line 76), test_installs_pre_push_hook (line 127), test_pre_push_hook_content_mentions_no_verify (line 139), test_no_hook_skips_installation (line 191). If aiv init exits non-zero, the test reports e.g. 'AssertionError: pre-commit hook was not installed' or 'AssertionError: .github/aiv-packets is not a dir' with no indication the subprocess crashed; the actual stderr is captured but never surfaced. |
+| F180 | low | verified | tests/unit/test_cli_commit_skip.py:118-121,131-134 | error-handling | test_reason_in_class_a (line 118) and test_reason_in_methodology (line 131) call _run_aiv_commit(...) without capturing or checking the returned CompletedProcess. If the command exits non-zero, the test fails with 'Expected 1 evidence file, got 0' (line 124 / line 136) rather than surfacing the subprocess's stderr. The fixture _run_aiv_commit is designed to return the CompletedProcess for inspection (the earlier TestSkipChecksBlockedForR1Plus tests do check result.returncode) but these two tests ignore it. |
+| F181 | low | verified | tests/unit/test_auditor.py:365 | dead-code | Inside TestAutoFix.test_fix_commit_pending, line 365 is 'p.read_text(encoding="utf-8")'. The return value (the file content after the attempted auto-fix) is not assigned to any variable and not asserted against. The comment on lines 366-368 says 'Just verify the auditor didn't crash' and the only real assertion is 'assert result.packets_scanned == 1' on line 368. The read_text call is pure dead I/O: it allocates a string, performs a syscall, and immediately discards the result. |
+| F182 | low | verified | tests/integration/test_svp_full_workflow.py:51 | dead-code | The module imports json, subprocess, sys, pathlib.Path, and pytest at the top (lines 19-26), but NOT os. Inside _run() at line 51, the environment dict is built as '{**__import__("os").environ, ...}'. This dynamic import hides the os dependency, bypasses static analysis tools, and silently re-evaluates __import__ on every call to _run(). A straightforward 'import os' at the top of the module is the standard pattern; the inline form is equivalent to dead code from a readability and tooling perspective. |
+| F183 | low | verified | tests/unit/test_pre_commit_hook.py:157-172 | error-handling | The helper _mock_main (line 108-122) patches six callables including _load_hook_config (line 120). The test test_functional_plus_packet_validates (line 157) uses raw 'with patch(...)' blocks and patches five of those six callables but omits _load_hook_config. At runtime the real _load_hook_config reads .aiv.yml from the current working directory. If the repo's own .aiv.yml defines custom functional_prefixes that exclude 'src/', then 'src/aiv/cli/main.py' is not considered functional and the test yields a false-positive pass (main() returns 0 for docs-only, not 1). The test is implicitly sensitive to CWD filesystem state. |
+| F184 | medium | verified | tests/unit/test_guard.py:408-425 | error-handling | TestGuardRunner.test_valid_markdown_packet (line 408) constructs a minimal markdown packet, runs GuardRunner(...).run(), and at line 425 asserts only 'result.canonical_enabled is False'. It never asserts result.block_count == 0, result.warn_count == 0, or result.overall_result == OverallResult.PASS. If the runner emits BLOCK-level findings for the submitted markdown (e.g. structural validation failures on the partial packet), the test passes as long as canonical mode is off. The intent of the test (line 423 comment: 'Markdown-only should pass structure checks') is not enforced by the assertion. |
+| F185 | low | verified | tests/unit/test_svp.py:676 | dead-code | After five test classes (TestEnums through TestSessionType, lines 146-670), a bare module-level import appears at line 676: 'from aiv.svp.lib.rating import calculate_rating, score_session'. PEP 8 requires imports at the top of the file. More critically, if this import raises ImportError or AttributeError (e.g., during a refactor of aiv.svp.lib.rating), pytest fails to collect the entire module but the error points to line 676 inside what appears to be the body of the file rather than the module header, making triage harder. The import is unreachable from the test methods above it and acts as a latent failure point that shadows all collection errors for tests above it. |
+| F186 | low | verified | src/aiv/lib/validators/anti_cheat.py:132-142 | correctness/logic | The line-counter condition `line.startswith('+') and not line.startswith('+++') or not line.startswith('-') and not line.startswith('\\') and not line.startswith('diff ')` is parsed by Python as `(A and B) or (C and D and E)`. For `+++ b/file.py`: A=True, B=False so first part is False; but C=True, D=True, E=True so second part is True, and `current_line` increments. The comment states only added lines and context lines should advance, not `+++` headers. Practical impact is nil because the subsequent `@@` hunk header always resets `current_line`, but it is a logic error against the stated intent. |
+| F187 | high | verified | src/aiv/lib/validators/anti_cheat.py:192-213 | correctness/logic | In `check_justification`, the outer loop iterates every finding; for each finding the inner loop searches all Class F claims for ANY one with justification text longer than 20 chars. The first match sets `has_justification = True` and breaks, clearing that finding. Because the inner loop restarts identically for every subsequent finding, a single Class F claim with any 21-character text clears ALL anti-cheat findings simultaneously, regardless of how many distinct test files were modified or what violation types were found. A boilerplate provenance note would bypass enforcement for an unlimited number of deleted assertions and skipped tests across unrelated test files. |
+| F188 | medium | verified | src/aiv/guard/models.py:182-188 | correctness/logic | The `finalize()` method sets `compliance_level = 'NON-COMPLIANT'` only on the block-count > 0 branch. The PASS branch leaves the field at its dataclass default of `'L1'`. In `runner.py:144-150`, when no canonical JSON block is found, the code calls `self.result.finalize()` and returns immediately. If no blocking errors were raised, the serialized JSON shows `overall_result: PASS` and `compliance_level: L1`, misrepresenting a markdown-only validation run (which skips all canonical checks) as full L1 canonical compliance. |
+| F189 | medium | verified | src/aiv/lib/parser.py:585 | correctness/logic | In `_enrich_claims_with_evidence`, `url = self._extract_url(artifact_raw) if not artifact_raw.startswith('http') else artifact_raw` bypasses `_extract_url` when the raw text starts with 'http'. If `artifact_raw` is a multi-line evidence section such as `'https://github.com/owner/repo/actions/runs/123\nSee context above'`, the full string including the newline and trailing text is passed directly to `ArtifactLink.from_url()`. Pydantic's `HttpUrl` validator rejects strings containing newlines, causing the `except Exception: artifact = artifact_raw` fallback at line 589 to activate. The claim then holds a plain-string artifact instead of a validated `ArtifactLink`, and link immutability checks are silently skipped. The identical pattern at line 603 has the same defect. |
+| F190 | medium | verified | src/aiv/lib/auditor.py:390-401 | correctness/logic | In `_check_packet`, `claims_match = re.search(r'## Claim\(s\)\s*\n(.*?)(?=---\|\Z)', body, re.DOTALL)` matches only the `## Claim(s)` heading spelling. The guard's `required_sections_with_alts` in `runner.py:222-233` explicitly accepts `## Claims` as a valid alternative. Packets using `## Claims` produce `claims_match = None`, so the CLAIM_TODO check at lines 390-401 and the FIX_NO_CLASS_F check at lines 418-428 are both unconditionally skipped. A packet author using the `## Claims` variant can leave numbered claims as TODO placeholders and omit Class F for bug-fix claims without triggering any audit findings. |
+| F191 | medium | verified | tests/unit/test_svp.py:155,387,885 | logic | test_verifier_tier_from_elo at line 155 asserts from_elo(500)==COMPETENT; test_initial_rating at line 387 and test_starts_at_500 at line 885 both assert a freshly-constructed VerifierRating with elo=500 has tier==NOVICE. These three assertions cannot all be correct simultaneously: either from_elo maps 500 to COMPETENT (making the initial-rating tests wrong) or the initial tier is NOVICE (making the from_elo test wrong). The root cause is that VerifierRating.__init__ does not call from_elo/update_tier, so .tier is set to a hard-coded default (NOVICE) independent of the elo argument, while from_elo() computes COMPETENT for the same elo=500 value. Any caller that reads .tier on a newly constructed VerifierRating without first processing an event will silently receive the wrong tier. |
+| F192 | medium | verified | tests/unit/test_validators.py:608 | logic | Line 608 reads: assert artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]. The test intent is that NEITHER claim 2 NOR claim 3 receives the same artifact as claim 1 (verifying no cross-claim leakage). The or operator makes the assertion vacuously true whenever at least one of the two conditions holds, so a bug in which claim 2 gets the same artifact as claim 1 while claim 3 does not (or vice versa) would pass this assertion. The correct operator is and, ensuring both conditions must hold simultaneously. |
+| F193 | medium | verified | tests/unit/test_svp.py:262-265 | logic | test_falsification_scenario_model constructs a FalsificationScenario and asserts fs.checked is False and fs.result == 'confirmed' on the same object. A scenario that has not been checked (checked=False) cannot have a meaningful result of 'confirmed': confirmation requires execution of the check. Code elsewhere that reads .result to decide trust without also guarding on .checked will incorrectly treat unverified scenarios as positive evidence. The default pairing of checked=False with result='confirmed' inverts the safe default, which should be checked=False with result=None or result='pending'. |
+| F194 | low | verified | tests/unit/test_cli_commit_skip.py:134 | logic | test_reason_in_methodology at line 134 accesses evidence_files[0].read_text() directly. Its sibling test test_reason_in_class_a at line 124 first asserts assert len(evidence_files) == 1 before indexing. If the aiv commit command fails silently (e.g. writes no evidence file), test_reason_in_methodology raises IndexError rather than a meaningful assertion failure, masking the actual defect and producing a confusing traceback that points to the test harness rather than the production code. |
+| F195 | low | verified | tests/unit/test_pre_commit_hook.py:158-172 | logic | Every other test in test_pre_commit_hook.py that exercises hook logic uses the _mock_main helper, which always patches _load_hook_config to return default prefixes. test_functional_plus_packet_validates (lines 158-172) patches _is_packet, subprocess.run, and sys.exit directly but never patches _load_hook_config. If an .aiv.yml with custom functional_prefixes exists in the test execution directory, the hook will load those custom prefixes, potentially classifying src/aiv/cli/main.py as non-functional, causing the test to pass for the wrong reason or fail unexpectedly. |
+| F196 | high | verified | src/aiv/lib/validators/links.py:163-168 | SSRF | _head_check (line 166) builds a Request from a caller-supplied URL and passes it directly to urlopen with no scheme whitelist and no private-IP blocklist. URLs originate from user-controlled packet evidence fields (packet.intent.evidence_link and claim.artifact.url). Accepted schemes include file://, ftp://, and gopher://, and no filter blocks 169.254.169.254 or RFC-1918 ranges. An attacker who can author a packet can trigger outbound requests to any host reachable from the runner. |
+| F197 | high | verified | src/aiv/guard/runner.py:191-200 | path traversal | _resolve_packet checks file_path.startswith('.github/') at line 191 but never calls Path(file_path).resolve() to canonicalise the path before reading it at line 200 with resolved.read_text(). An attacker controlling the PR body can supply 'Packet Source: .github/../../../../etc/passwd', which passes the prefix guard while resolving outside the working directory. The design intent is to restrict packet sources to .github/, but the imperfect guard subverts this invariant. |
+| F198 | medium | verified | src/aiv/guard/github_api.py:176 | injection | get_file_content constructs the API URL as f"{self.base_url}/repos/{ctx.owner}/{ctx.repo}/contents/{path}?ref={ref}" without URL-encoding path or ref. A path value such as 'README.md?ref=main&per_page=100' or a ref value such as 'abc&per_page=100' injects extra query parameters. By contrast, search_code at line 195 in the same file correctly applies urllib.parse.quote before interpolation, demonstrating awareness of the issue. |
+| F199 | medium | verified | src/aiv/guard/canonical.py:438-441 | injection | _read_scope_inventory (line 440) slices the raw ref string after the 'inline-b64-json:' prefix and immediately calls base64.b64decode(payload).decode('utf-8') with no length guard. A packet author can embed a multi-megabyte base64 payload; the runtime decodes the entire blob before any size check can occur. No upper-bound validation exists anywhere in the function prior to the decode call. |
+| F200 | medium | verified | src/aiv/guard/github_api.py:40 | secrets | GitHubAPI.__init__ stores the token as self.token (line 40, a plain string attribute). The class defines no __repr__ or __str__ override, so repr(api) or pickling emits the token value. The Authorization header dict is built in _request (line 47) and is visible in the local frame of any exception traceback captured by logging or crash reporters. The GitHubAPIError raised at line 55 chains from the HTTPError (from e), preserving the call frame that holds headers. |
+| F201 | info | verified | src/aiv/guard/canonical.py:442 | injection | _read_scope_inventory uses __import__('json').loads(decoded) instead of a top-level import statement. In a tool whose explicit purpose is auditability and reproducible verification, using a dynamic import evades static-analysis scanners that track json.loads call sites and obscures that user-supplied base64 data is being parsed. The pattern is inconsistent with every other JSON usage in the codebase, all of which use a plain 'import json' at module level. |
+| F202 | high | verified | tests/unit/test_validators.py:427 | SSRF | TestLinkVitality (lines 419-544) confirms that LinkValidator(audit_links=True) calls urlopen() with URLs extracted verbatim from user-controlled packet content. Tests monkeypatch urlopen to return 200/404/403/URLError (lines 427-479), revealing the production call pattern. Zero tests verify that loopback addresses (127.0.0.1), link-local (169.254.x.x), RFC-1918 private ranges, or non-https schemes are blocked. An attacker supplying 'http://169.254.169.254/latest/meta-data/' as a Class-E link would receive a real outbound request from the machine running 'aiv audit' with audit_links=True, satisfying the SSRF definition. |
+| F203 | medium | verified | tests/unit/test_validators.py:465 | SSRF | test_audit_links_network_error_warns (lines 465-479) patches urlopen to raise URLError and expects Severity.WARN. Python's urllib.request.urlopen follows redirects by default. No test verifies that a redirect from a public domain to an internal host (e.g. http://localhost/) is blocked. This allows a public URL that redirects to an internal service to bypass any origin-only SSRF defenses, because the production code makes the redirected request before any host check could apply. |
+| F204 | medium | verified | tests/unit/test_cli_commit_skip.py:114 | injection | TestSkipReasonStampedInEvidence (lines 114-138) tests only benign alphanumeric strings ('Help text only, no logic changes', 'Formatting only') and asserts verbatim embedding via 'assert reason in content' at line 126. No test verifies that markdown-injection strings (e.g. '\n## Classification\n  risk_tier: R0\n'), null bytes, or format-breaking characters in --skip-reason are rejected or escaped before being written to the .md evidence file. A developer-supplied skip-reason containing forged markdown headings could corrupt the evidence file structure or inject false verification tier claims that the auditor subsequently reads as authoritative. |
+| F205 | medium | verified | tests/unit/test_svp.py:511 | authz | test_s011_wrong_verifier (lines 511-517) checks S011 by comparing the string author_github_id to the string session.verifier_id. No test verifies that author_github_id is derived from a trusted source (e.g. git commit signature, a verified GitHub token), rather than being a caller-supplied value in the session JSON. An operator who can write the session file can set verifier_id and author_github_id to any matching string and pass the ownership authz check. No tests cover empty-string, whitespace-only, or impersonation-pattern identifiers (e.g. 'admin', 'root') that should be rejected. |
+| F206 | medium | verified | tests/unit/test_auditor.py:370 | injection | test_fix_class_e_local_ref (lines 370-381) documents that when auto-fix cannot obtain a git SHA (non-git context), it constructs GitHub URLs with branch 'main'; the test comment at line 379 reads 'falls back to main'. The same PacketAuditor detects mutable branch URLs as CLASS_E_MUTABLE ERROR (verified at lines 145-155). The auto-fix therefore introduces the very violation class it is designed to detect. An operator using 'aiv audit --fix' outside a git repo would silently clear a CLASS_E_NO_URL warning by substituting a CLASS_E_MUTABLE ERROR-class link — the follow-on audit pass would flag it differently, creating a confusion window that could be exploited to appear compliant. |
+| F207 | low | verified | tests/unit/test_guard.py:92 | injection | _minimal_canonical() at line 92 constructs an evidence artifact reference as 'inline-json:' + json.dumps(['README.md']), implying the production canonical validator strips the 'inline-json:' prefix and deserializes the remainder. No test passes a malicious payload (deeply nested dicts, enormous arrays, unicode escapes, or type-confusion inputs) to this field. If the production deserialization path lacks a size cap or type assertion, an attacker embedding a crafted inline-json reference in a packet could trigger JSON deserialization of attacker-controlled input, risking property injection or resource exhaustion in the guard runner. |
+| F208 | low | verified | tests/unit/test_pre_push_hook.py:189 | authz | TestMain (lines 189-238) mocks sys.stdin, _get_commits_in_range, and _get_commit_files — the entire real execution path is replaced. test_cli_init.py verifies that the installed hook file contains 'from aiv.hooks.pre_push import main' (line 137) but never performs a real 'git push' to confirm the shebang, file permissions, or hook invocation path are correct. A subtle installation defect (wrong permissions, absent shebang line, Python path misconfiguration) would allow all commits to bypass the pre-push authz gate undetected by the test suite. |
+| F209 | high | verified | src/aiv/cli/main.py:1237 | doc/code drift | Line 1237 executes `['git', 'commit', '--no-verify', '-m', commit_msg]` to commit the Layer 2 VERIFICATION_PACKET_*.md. The `--no-verify` flag skips the pre-commit hook that `aiv init` installs. The protocol states every commit must pass hook enforcement, but the one commit that carries the verification packet is explicitly exempt from that enforcement, creating a self-exemption gap in the attestation chain. |
+| F210 | high | verified | .husky/pre-commit:61 | doc/code drift | The bash hook at line 61 defines `PACKET_PATTERN="^\\.github/(aiv-packets/)?VERIFICATION_PACKET_.*\\.md$"`. The Python hook at `src/aiv/hooks/pre_commit.py:46-52` recognises three prefixes: `.github/aiv-packets/VERIFICATION_PACKET_`, `.github/VERIFICATION_PACKET_`, and `.github/aiv-packets/PACKET_`, plus a separate `EVIDENCE_PREFIX = ".github/aiv-evidence/EVIDENCE_"`. The bash hook is missing `.github/aiv-packets/PACKET_*.md` (third Python prefix) and all Layer 1 evidence files. Husky-managed developers committing `aiv commit` output (an EVIDENCE_*.md + source file pair) would have the bash hook treat the EVIDENCE file as an unrecognised functional file, either blocking the commit or letting it pass without proper packet detection — the Two-Layer Architecture bypass present in Python hook lines 381-404 is absent from the bash hook entirely. |
+| F211 | medium | verified | src/aiv/hooks/pre_commit.py:7 | doc/code drift | The module docstring at line 7 says 'Feature-complete port of the original .husky/pre-commit (285 lines of bash)'. However the Python hook adds at least three capabilities absent from the bash hook: (1) `EVIDENCE_PREFIX = ".github/aiv-evidence/EVIDENCE_"` at line 52 gives Layer 1 files a distinct code path, (2) an active-change-context bypass at lines 381-404 that exempts commits made within an `aiv begin`/`aiv commit` session, and (3) Rule 10 at line 424 that classifies any unrecognised 2-file combination. The docstring also lists only Rules 1-9 (lines 15-24) while the implementation contains Rule 10, making the rule inventory stale. |
+| F212 | medium | verified | .cursorrules:30-35 | doc/code drift | `.cursorrules:30-35` defines the four tiers only as risk-level descriptions (e.g. 'R1: Low risk (bug fixes, refactors)'). `src/aiv/guard/canonical.py:25` enforces R1 = `['A','B','E']`, R2 adds C, R3 adds D+F. `src/aiv/lib/validators/pipeline.py:183` enforces R1 requires `{EXECUTION, REFERENTIAL, INTENT}`. An AI assistant following `.cursorrules` is told only to pass `-t R1` and `-i <url>` but receives no guidance that Class E is mandatory for R1 and that missing it causes a guard block. The gap is partially offset by the `-i MUST be a URL` rule at `.cursorrules:18`, but the tier-to-class mapping is completely absent. |
+| F213 | medium | verified | src/aiv/guard/runner.py:5 | doc/code drift | The module docstring at line 5 states 'Replaces the 2244-line inline JS in aiv-guard.yml'. No file in the repository contains 2244 lines of JavaScript guard logic; `.github/workflows/aiv-guard-python.yml` runs `python -m aiv.guard` and never contained embedded JS. The reference describes a deleted or never-committed precursor, leaving a ghost cross-reference in the canonical docstring. |
+| F214 | medium | verified | .github/workflows/ci.yml:5-7 | doc/code drift | `ci.yml:5-7` constrains both the `push` and `pull_request` triggers to `branches: [ main ]`. The `protocol-audit` job at line 64 therefore only fires when changes reach main. `src/aiv/hooks/pre_push.py:17-22` describes its Layer 3 defense as 'CI protocol-audit (cross-commit coverage check)', implying that `git push` from any branch activates this CI layer. Pushes to feature branches fire the pre-push hook but do NOT trigger the `protocol-audit` job, leaving the stated Layer 3 coverage absent for all non-main pushes. |
+| F215 | medium | verified | src/aiv/lib/config.py:154 | doc/code drift | `HookConfig.functional_prefixes` includes `".husky/"` at line 154, classifying any change to `.husky/pre-commit` as a functional change requiring a verification packet. The commit of that packet is then enforced by the same `.husky/pre-commit` hook being modified. While `aiv close` bypasses the hook via `--no-verify` (line 1237 in cli/main.py), the circularity is undocumented and the Python hook's `active change context` bypass (pre_commit.py:381-404) is the only functional escape hatch. Developers not using `aiv init` (Husky-only workflows) have no documented way to modify the enforcement hook. |
+| F216 | medium | verified | src/aiv/lib/validators/evidence.py:334 | doc/code drift | `EvidenceValidator.validate_file_type_triggers()` at `evidence.py:334` emits `rule_id='E021'` for 'Database/dependency/API/infrastructure changes detected without Class D evidence'. `LinkValidator._check_link_vitality()` at `links.py:140` and `links.py:152` also emits `rule_id='E021'` for 'Evidence link unreachable (HTTP {status})' and 'Evidence link could not be reached'. Both rule IDs resolve to the same string 'E021' in output, making automated filtering or suppression of one class of E021 findings impossible without also suppressing the other. |
+| F217 | medium | verified | src/aiv/lib/validators/evidence.py:261 | doc/code drift | The method signature is `validate_file_type_triggers(self, packet: VerificationPacket, changed_files: list[str])`. `BaseValidator.validate()` accepts only `packet`; `ValidationPipeline` calls `validator.validate(packet)` for each stage, never passing `changed_files`. A grep of `src/` finds zero callers of `validate_file_type_triggers` — the method is defined once at line 261 and never invoked. File-type-triggered evidence requirements (e.g., 'Database changes detected — Class D must include schema diff') are therefore never enforced in any code path, despite being documented as requirements (evidence.py:275-301). |
+| F218 | low | verified | src/aiv/lib/validators/structure.py:24-30 | doc/code drift | The class docstring at lines 24-30 itemises four checks: 'Header exists (E001)', 'Intent section exists with Class E link (E002, E003)', 'At least one claim section (E005)', 'Each claim has evidence class (E006) and artifact (E007)'. The `validate()` method at lines 31-78 checks only E002 (verifier_check length ≥ 10), E005 (claim description quality), and E008 (reproduction field present). E001, E003, E006, and E007 appear in the docstring but are absent from the code without an explanatory comment indicating parser-time enforcement — unlike E002 and E005 which do have inline comments noting parser delegation. |
+| F219 | low | verified | scripts/map_packets.py:15 | doc/code drift | `PACKET_PREFIX = ".github/aiv-packets/VERIFICATION_PACKET_"` at line 15 is the sole detection pattern for packets. Layer 1 evidence files at `.github/aiv-evidence/EVIDENCE_*.md` (created by `aiv commit`) are never scanned. The script's own markdown output describes itself as the 'evidence index' answering 'Show me all evidence for file X', but a file exclusively covered by Layer 1 evidence would show as unmapped. `migrate_two_layer.py` (the migration tool) writes to `.github/aiv-evidence/` but `map_packets.py` has no corresponding read path, making the Two-Layer Architecture's Layer 1 half invisible to the official audit mapping tool. |
+| F220 | high | verified | tests/integration/test_svp_full_workflow.py:317 | doc/code drift | Docstring at line 317 states: 'Phase 4 (ownership commit) is injected directly into the session JSON because it requires actual git operations that we mock here.' However lines 381-402 exercise Phase 4 entirely via self._run('ownership', ...) — the real CLI command — with no JSON injection anywhere in the test body. The discrepancy is a direct contradiction between the stated test strategy and the actual implementation. |
+| F221 | medium | verified | tests/integration/test_svp_full_workflow.py:4 | doc/code drift | The module docstring (lines 4-16) reads 'Validates the verifier's journey through all 4 phases: Phase 1-Phase 4', omitting any mention of Phase 0. Yet test_full_journey_passes_validation (lines 408-415) asserts five phase keys: phase_0_complete, phase_1_complete, phase_2_complete, phase_3_complete, phase_4_complete. The unit test at tests/unit/test_svp.py:542 also confirms 5 phases via comment '# 3/5 phases' for a session with only Phase 0-2 complete. Phase 0 (Sanity/aiv_guard_passed) is a real protocol phase that is absent from the integration-test documentation. |
+| F222 | high | verified | tests/unit/test_models.py:296 | doc/code drift | Method test_default_branch_not_mutable_with_custom_set has docstring "'main' should NOT be mutable if excluded from custom set." The assertion on line 304 is `assert link.is_immutable is False`, which means the link IS mutable (is_immutable=False). The inline comment on line 303 reinforces this: '# still non-SHA, so still mutable'. The test name/docstring are therefore inverted relative to what the assertion actually checks. |
+| F223 | medium | verified | tests/unit/test_cli_init.py:139 | doc/code drift | TestInitInstallsPrePushHook.test_pre_push_hook_content_mentions_no_verify docstring (line 140) states: 'Claim 2: Pre-push hook catches commits that bypassed pre-commit via --no-verify.' The test body at lines 147-149 only checks `assert '--no-verify' in content`, verifying that the string '--no-verify' appears somewhere in the hook shim. It does NOT verify that the hook actually intercepts or rejects commits made with --no-verify. The claim of 'catches' implies behavioral enforcement; the test only verifies documentary presence. |
+| F224 | low | verified | tests/unit/test_pre_commit_hook.py:233 | doc/code drift | Class TestRule8TooManyFiles at line 233 and its test test_three_functional_files_rejected imply three functional files trigger rejection. The staged list at lines 238-242 contains ['src/a.py', 'src/b.py', '.github/aiv-packets/VERIFICATION_PACKET_FOO.md']. The packet file is not functional, leaving only two functional files. The rule being tested (too many functional files) is triggered by two functional files, not three; the name overstates the count by one. |
+| F225 | low | verified | tests/unit/test_auditor.py:243 | doc/code drift | TestEvidenceTodoSeverity class docstring (lines 243-246) reads: 'These tests cover the auditor change in auditor.py#L251-L262 (CLASS_E_NO_URL severity escalation) and auditor.py#L276-L296 (evidence_section tracking).' These absolute line-number anchors will silently mismatch the actual source lines after any insertion or deletion in auditor.py, making the reference misleading without any warning. |
+| F226 | high | verified | tests/unit/test_validators.py:606 | doc/code drift | At lines 606-610 the comment reads: '# Claims 2 and 3 should NOT have consumed the same artifact'. The assertion is `artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]`. OR logic means the test passes even if claim 2 and claim 1 share the same artifact (so long as claim 3 differs), or vice versa. The documented intent ('Claims 2 AND 3 should NOT...') requires AND logic to ensure neither claim 2 nor claim 3 re-uses the unlinked artifact. As written, a partial reuse of the bug would produce a false-pass. |
+| F227 | medium | verified | tests/unit/test_auditor.py:359 | doc/code drift | TestAutoFix.test_fix_commit_pending (lines 359-368) is classed under TestAutoFix and named to suggest the fix-mode remediation is exercised. The inline comment at line 365 says 'In a non-git context, commit SHA won't be found, so pending stays' and the sole assertion at line 367 is `assert result.packets_scanned == 1`. The test does not assert that `pending` was replaced, nor that any remediation occurred. The test name advertises a capability (fix commit pending) that is explicitly not exercised. |
+| F228 | low | verified | tests/unit/test_coverage.py:36 | doc/code drift | TestBuildEvidenceSections.test_r0_has_class_b_and_a asserts three evidence classes: Class B (line 38), Class A (line 39), and Class E (line 40). The test name references only B and A. Class E is present per the assertion with comment 'structurally required by parser'. Combined with test_guard.py:449 asserting REQUIRED_CLASSES['R0'] == ['A', 'B'] (no E), there is an undocumented divergence: the guard enforces [A,B] but the evidence builder always emits E for R0. |
+| F229 | medium | verified | tests/unit/test_guard.py:449 | doc/code drift | test_guard.py:449 asserts `REQUIRED_CLASSES['R0'] == ['A', 'B']`, defining R0 as needing only Class A and B. test_coverage.py:42 asserts `assert '### Class E' in result` for an R0 call to _build_evidence_sections, with comment 'structurally required by parser'. The guard rejects R0 packets missing A or B but does not list E as required; the builder unconditionally emits E. This creates an inconsistency in what R0 compliance means: guard-enforced vs. builder-generated evidence sets disagree on Class E. |
+| F230 | low | verified | src/aiv/lib/change.py:82 | dead-code | Line 82 reads `except (json.JSONDecodeError, Exception)`. Because json.JSONDecodeError is a subclass of Exception, listing it first in the tuple is redundant — the second clause already matches every instance the first would. The json.JSONDecodeError clause can never be reached in isolation; any handler logic intended to be specific to JSON errors is dead. Correct idiom: list the subclass after the superclass when distinct handling is needed, or remove the subclass if the same handler applies to both. |
+| F231 | low | verified | src/aiv/lib/config.py:284 | error-handling | Lines 263-285: the entire YAML parse and config-extraction block is wrapped in `try: ... except Exception: pass`. Any error — malformed YAML, wrong type for `functional_prefixes`, `FileNotFoundError` — causes the function to return hardcoded defaults with zero diagnostic output. A corrupt `.aiv.yml` that removes all functional prefixes silently reverts the hook to default prefixes, potentially misclassifying files as functional or non-functional without any visible indication that the config was ignored. The hook's policy enforcement depends on this config, making the silent fallback a correctness risk. |
+| F232 | high | verified | src/aiv/lib/evidence_collector.py:249 | error-handling | _run_git at lines 249-255 calls `subprocess.run(["git", *args], capture_output=True, text=True)` with no try/except. When git is not on PATH this raises `FileNotFoundError`; if `timeout=` is passed by a future caller, `subprocess.TimeoutExpired` would also propagate. Direct callers such as `collect_class_b` (line 283) call `_run_git` outside any try/except, so either exception propagates up through the evidence collection pipeline and crashes the entire pre-commit hook run with an unhandled traceback rather than a structured diagnostic. |
+| F233 | medium | verified | src/aiv/hooks/pre_commit.py:155 | resource-handling | _validate_packet (lines 155-213) creates a NamedTemporaryFile (line 155) and a mkdtemp directory (line 183). Neither resource is enclosed in a try/finally block: an exception between creation and the manual `tmp_path.unlink()` / `shutil.rmtree(audit_dir)` calls at lines 209-211 leaks OS temp resources. More critically, the outer `except Exception as exc` at line 212 prints a WARNING and returns True — the caller interprets True as 'packet is valid'. Any infrastructure failure (broken pipe, missing Python binary, import error in the validator) silently lets the commit through, defeating the non-bypassability guarantee stated in pre_push.py:16. |
+| F234 | low | verified | src/aiv/cli/main.py:1664 | logic-error | Lines 1664 and 1721 evaluate `"changed_symbols" in dir()` and `"class_c_data" in dir()` respectively to determine whether those local variables were assigned earlier in the function. `dir()` with no argument is defined by CPython to return an approximation of the local scope, but it is an interactive introspection aid rather than a guaranteed scope predicate; the correct idiom is `"name" in locals()`. When `line_ranges` is empty (line 1631), `changed_symbols` is never assigned, and the dir() check yields environment-dependent results. If the check returns True spuriously, the unbound name is referenced and raises NameError. |
+| F235 | low | verified | src/aiv/cli/main.py:1488 | dead-code | Line 1413 imports `subprocess` at the top of the `commit_cmd` function body (or the enclosing module). Line 1488 then executes `import subprocess as _sp`, creating a local alias `_sp` used for `_diff_check` and `_staged_check` at lines 1490-1500. The alias adds no encapsulation; `subprocess` is already accessible and the alias is not used anywhere that requires a different name. The second import is dead weight and increases the local-variable namespace noise. |
+| F236 | medium | verified | src/aiv/lib/auditor.py:236 | error-handling | Inside the `audit()` loop (lines 230-260), `p.read_text(encoding='utf-8')` at line 236 and `p.write_text(new_body, encoding='utf-8')` at line 247 are called with no surrounding try/except. A permission error, file deleted between the glob and the read, or disk-full condition during write raises an unhandled exception that aborts the entire audit run, discarding all findings collected from previously processed packets. No partial-results report is emitted before the crash. |
+| F237 | high | verified | src/aiv/guard/github_api.py:54 | error-handling | `_request` (lines 43-58) catches `HTTPError` at line 54 but not `urllib.error.URLError`, which covers DNS resolution failures, connection refused, OS-level timeouts, and SSL errors. `_request_bytes` (line 60-76) has the same gap. Neither wraps the urlopen call in a broad URLError handler. Callers such as `list_pr_files` (line 116) catch only `GitHubAPIError`; raw `URLError` therefore propagates unhandled all the way to the GitHub Actions step, producing a raw Python traceback in CI output instead of a structured guard failure message. |
+| F238 | medium | verified | src/aiv/cli/main.py:743 | error-handling | Line 743 runs `subprocess.run(["python", "-m", "pytest", "--tb=no", "-q"], ...)`. In a virtual environment, `python` may not be on PATH or may resolve to the system interpreter rather than the activated venv's interpreter, causing pytest to run against incorrect dependencies or fail with a ModuleNotFoundError. The correct idiom is `sys.executable` (already imported at the top of the file), which always resolves to the interpreter running the current process. |
+| F239 | medium | verified | src/aiv/guard/runner.py:393 | error-handling | The `main()` entry point at line 393 calls `GitHubAPI.context_from_env()` and `runner.run()` with no surrounding try/except. Missing required environment variables (`GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_EVENT_NAME`) raise `KeyError`; network or API failures raise `GitHubAPIError` or `URLError`. All these surface as raw Python tracebacks in the GitHub Actions log with no structured error message, exit-code mapping, or diagnostic hint to the developer about which variable or API call failed. |
+| F240 | low | verified | src/aiv/guard/manifest.py:1 | dead-code | The four public functions `validate_class_a_manifest`, `validate_class_c_manifest`, `validate_semantic_manifest`, and `validate_durable_manifest` defined across lines 1-218 of `manifest.py` are not imported or called from any other file in the audited file list. A search of the audited surface for any of these function names returns zero hits outside the defining module. The manifest validation logic — which is precisely the guard functionality needed to enforce per-class evidence requirements — is therefore permanently inactive. Guard runs never invoke it, meaning Class A, C, semantic, and durable evidence is never validated against manifest content. |
+| F241 | low | verified | src/aiv/lib/parser.py:38 | dead-code | The `ParsedSection` dataclass declares `raw_start: int = 0` and `raw_end: int = 0` at lines 38-42. These fields are assigned during `_extract_sections` (lines 225, 234, 243) but are never accessed by any downstream parser method or external caller in the audited surface — only `level`, `title`, and `content` are consumed. The fields exist as dead state tracking that adds confusion about whether byte-offset tracking was planned but abandoned. |
+| F242 | low | verified | src/aiv/lib/language_drivers/treesitter_driver.py:249 | logic-error | In `_extract_named_imports` at line 249, when `len(names) >= 2` and `names[1].text` is falsy (empty bytes b''), `b''.decode('utf-8')` evaluates to `''` and the empty string is added to the `imports` set. Downstream in `find_covering_tests` and `find_downstream_callers`, the check `bare_name in imported_symbols` would match any symbol whose bare name is the empty string, which can occur for anonymous or malformed AST nodes, causing spurious false-positive coverage claims. |
+| F243 | info | verified | src/aiv/lib/evidence_collector.py:343 | dead-code | Line 343 inside `collect_class_a` executes `import xdist as _` with a `# noqa: F401` comment. The sole purpose is to detect whether pytest-xdist is installed by catching `ImportError` on the surrounding try/except (lines 342-347). The `_` binding is immediately discarded. The idiomatic Python test for package presence without side effects is `importlib.util.find_spec('xdist') is not None`, which avoids actually importing the package (and its transitive dependencies) just to test for its existence. [runtime: evidence_collector.py:343 'import xdist as _' confirmed; the pattern is functionally correct (ImportError on absence triggers serial mode) but non-idiomatic. importlib.util.find_spec('xdist') is the conventional probe. The # noqa: F401 suppresses the linter but the pattern remains opaque.] |
+| F244 | medium | verified | tests/unit/test_cli_init.py:54-69,75-82,128-135,192-197 | resource/error-handling | Multiple test methods in TestInitCreatesDirectories, TestInitInstallsPreCommitHook, TestInitInstallsPrePushHook, and TestInitIdempotent call subprocess.run([sys.executable, '-m', 'aiv', 'init', ...]) and discard the return value (no assignment, no returncode check). Examples: test_creates_packets_dir (line 54-60), test_creates_evidence_dir (line 62-69), test_installs_pre_commit_hook (line 75-82), test_installs_pre_push_hook (line 128-135), test_double_init (line 221-228). If 'aiv init' exits non-zero, tests proceed and fail with a misleading 'directory does not exist' assertion rather than surfacing the actual subprocess failure. |
+| F245 | medium | verified | tests/unit/test_cli_commit_skip.py:117-118,130-131 | resource/error-handling | In TestSkipReasonStampedInEvidence.test_reason_in_class_a (line 117) and test_reason_in_method (line 130), _run_aiv_commit() is called but its CompletedProcess return value is not assigned or inspected. If the command fails (non-zero exit), the test immediately proceeds to glob for EVIDENCE_*.md files in the evidence directory, finds zero, and fails with 'Expected 1 evidence file, got 0' — obscuring that the root cause was the aiv commit command failing. The helper at line 78-84 always returns the CompletedProcess but callers discard it. |
+| F246 | medium | verified | tests/unit/test_pre_commit_hook.py:157-172 | resource/error-handling | The helper _mock_main (line 108-122) patches six symbols including 'aiv.hooks.pre_commit._load_hook_config'. TestRule2AtomicUnit.test_functional_plus_packet_validates (line 157-172) constructs its own with-block of five patches but omits the _load_hook_config patch. This causes pre_commit.main() to call the real _load_hook_config(), which reads .aiv.yml from os.getcwd(). If a custom .aiv.yml is present in the working directory at test time, functional_prefixes/functional_root_files differ from defaults, causing a non-deterministic test outcome. All other tests in the file route through _mock_main which consistently patches this function. |
+| F247 | medium | verified | tests/unit/test_evidence_collector.py:100-101 | resource/error-handling | test_collect_new_file_fallback uses 'with patch("pathlib.Path.read_text", return_value="line1\nline2\nline3\n"):' (line 100-101). This replaces the method on the stdlib Path class globally within the context, meaning any Path.read_text() call triggered anywhere in the call stack during collect_class_b (e.g., config reading, logging, other evidence collection internals) will silently return the three-line stub instead of real content. The correct target is the specific module-level usage; patching the class method is too broad and could suppress unrelated I/O errors in the SUT. |
+| F248 | low | verified | tests/unit/test_svp.py:676 | dead-code | Line 676 contains 'from aiv.svp.lib.rating import calculate_rating, score_session' inserted between the TestSessionType class (ends around line 669) and TestScoreSession class (starts line 679). This import appears at module scope but after several class definitions, violating PEP 8 E402. More critically, if the import fails (e.g., aiv.svp.lib.rating is absent), Python raises ImportError mid-collection after earlier test classes have been collected, causing confusing partial-collection failures instead of a clean collection error at the top of the file. |
+| F249 | low | verified | tests/unit/test_validators.py:394 | dead-code | The _make_packet_with_url fixture (line 392-417) contains 'from aiv.lib.models import ArtifactLink, IntentSection' at line 394. IntentSection is already imported at module level (line 21: 'from aiv.lib.models import (... IntentSection ...)'), making the second import of IntentSection inside the fixture a dead re-import. ArtifactLink is missing from the module-level import and is therefore locally imported here (line 394) and again inside test_audit_links_deduplicates_urls (line 502), resulting in duplicated inline imports across the file that should be consolidated at the module level. |
+| F250 | low | verified | tests/unit/test_language_drivers.py:90-95 | resource/error-handling | Lines 90-95 guard the TreeSitterDriver availability check with a bare 'except ImportError'. The expression 'TreeSitterDriver().available' first constructs a driver instance (which may raise AttributeError, RuntimeError, or OSError if tree-sitter native libraries are partially installed or corrupted) and then accesses '.available'. Only ImportError is caught; any other exception propagates out of module initialization and causes a pytest collection error rather than a graceful skip, defeating the purpose of the guard. |
+| F251 | info | verified | tests/integration/test_svp_full_workflow.py:51 | dead-code | The _run helper method (line 43-61) constructs the subprocess env dict with 'env={**__import__("os").environ, ...}' at line 51. The 'os' module is never imported at the top of the file; the __import__ builtin is used inline to avoid a module-level import. This is non-idiomatic Python that obscures the dependency on the os module. While functionally equivalent, it makes static analysis and import tracking harder and is the only instance of __import__() use across all audited test files. |
+
+
+## Machine-checkable data
+
+```json
+{
+  "findings": [
+    {
+      "id": "F1",
+      "title": "Anti-cheat line counter increments on +++ file header lines",
+      "location": "src/aiv/lib/validators/anti_cheat.py:135-141",
+      "class": "correctness",
+      "severity": "medium",
+      "evidence": "Python operator precedence evaluates the compound condition as `(line.startswith('+') and not line.startswith('+++')) or (not line.startswith('-') and not line.startswith('\\\\') and not line.startswith('diff '))`. The second OR clause is satisfied by '+++' header lines (they are not '-', not '\\\\', not 'diff '), so current_line is incorrectly incremented for every +++ line. The @@ hunk header resets the counter, limiting practical impact to within-hunk offset drift, but the intended guard against +++ is silently bypassed.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F2",
+      "title": "EvidenceClass.from_string() startswith allows multi-character prefix false positives",
+      "location": "src/aiv/lib/models.py:54",
+      "class": "correctness",
+      "severity": "info",
+      "evidence": "`if normalized.startswith(member.value)` matches any string beginning with the member value character, so inputs like 'AB', 'AF', or 'A1' match member 'A' (EXECUTION). Since evidence class values are single capital letters and the class only has six members, collision risk is low in practice but the check is semantically wrong; equality comparison is required.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F3",
+      "title": "GuardResult.finalize() never updates compliance_level for passing results",
+      "location": "src/aiv/guard/models.py:182-189",
+      "class": "correctness",
+      "severity": "medium",
+      "evidence": "The finalize() method sets compliance_level='NON-COMPLIANT' on failure but has no corresponding assignment in the else branch for PASS. The field retains its Pydantic default ('L1') regardless of which risk tier was actually validated, so a passed R3 packet reports the same compliance_level as a passed R0 packet. Consumers reading compliance_level from persisted GuardResult JSON cannot distinguish tier levels from pass outcomes.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F4",
+      "title": "detect_untracked_commits() silently returns [] when first tracked commit has no parent",
+      "location": "src/aiv/lib/change.py:233",
+      "class": "correctness",
+      "severity": "low",
+      "evidence": "The git range `f'{first_sha}^..HEAD'` appends a caret to denote the parent of the first tracked commit. When first_sha is the repository's initial commit, git fails (exit code 128: 'unknown revision') because there is no parent. The surrounding try/except catches the CalledProcessError and returns [], silently reporting zero untracked commits instead of raising or using an alternative range like `--root`.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F5",
+      "title": "_validate_execution() early pass for github_actions/external links suppresses performance and UI sub-checks",
+      "location": "src/aiv/lib/validators/evidence.py:86-91",
+      "class": "correctness",
+      "severity": "medium",
+      "evidence": "When claim.artifact.link_type is 'github_actions' or 'external' the method hits `pass` and returns no findings. The performance benchmark check (E013) and UI state-transition check (E012) are nested inside the elif branches that are never reached once the early pass fires. A Class A claim describing a UI change or performance improvement linked to a CI run will never trigger E013 or E012, allowing claims that lack differential benchmarks or state-transition artifacts to pass unchallenged.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F6",
+      "title": "aiv close commits packet with --no-verify, bypassing all pre-commit hook gates",
+      "location": "src/aiv/cli/main.py:1237",
+      "class": "correctness",
+      "severity": "info",
+      "evidence": "The close command runs `git commit --no-verify -m <commit_msg>` for the packet commit. This intentionally avoids circular validation (the packet cannot gate itself), but it creates a compliance gap: a malformed or incomplete verification packet can be committed to the repository without any hook-level structural check. No secondary validation of the packet before --no-verify commit was observed in the close command path.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F7",
+      "title": "Verification Methodology missing-section error suppressed when other required sections also absent",
+      "location": "src/aiv/guard/runner.py:249-253",
+      "class": "correctness",
+      "severity": "low",
+      "evidence": "The condition `if not has_optional and not missing` emits the E-METH error only when no other required sections are already flagged as missing. When a packet omits both required sections and the methodology section, the methodology-specific diagnostic is swallowed; reviewers see only the generic missing-section errors and must infer the methodology gap rather than receiving a targeted message.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F8",
+      "title": "Logic error: `or` instead of `and` in unlinked-evidence-consumption assertion",
+      "location": "tests/unit/test_validators.py:608",
+      "class": "correctness/logic",
+      "severity": "high",
+      "evidence": "The assertion on line 608 reads: `assert artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]`. The test comment (line 607) says 'Claims 2 AND 3 should NOT have consumed the same artifact'. With `or`, the assertion passes whenever EITHER claim 2 OR claim 3 differs from claim 1 — e.g., if artifacts = [\"src/handler.py\", \"src/handler.py\", \"default\"], then `False or True = True` and the test PASSES despite claim 2 incorrectly receiving the unlinked artifact. A partial bug where unlinked evidence is applied to the first two claims but not the third is silently ignored. The correct operator is `and`.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F9",
+      "title": "Contradictory assertions: `from_elo(500)` returns COMPETENT but initial VerifierRating at ELO 500 asserts NOVICE",
+      "location": "tests/unit/test_svp.py:154-155",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "Line 154-155: `assert VerifierTier.from_elo(499) == VerifierTier.NOVICE` and `assert VerifierTier.from_elo(500) == VerifierTier.COMPETENT`. But line 387-388 (`test_initial_rating`): `r = VerifierRating(verifier_id='user1')` (elo_rating defaults to 500) followed by `assert r.tier == VerifierTier.NOVICE`. Additionally line 883-886 (`test_starts_at_500`): `calculate_rating('new-user', [])` also asserts `tier == VerifierTier.NOVICE` at elo=500. Since `from_elo(500)` is COMPETENT, the initial tier at ELO 500 is inconsistent: either the constructor must call `update_tier()` (making initial tier COMPETENT), or the `from_elo` threshold must be `> 500` for COMPETENT (making `from_elo(500)` return NOVICE). One of these two test groups encodes a wrong boundary, meaning the tier display is incorrect for freshly created ratings.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F10",
+      "title": "Dead code: `p.read_text()` return value discarded with no assertion in auto-fix test",
+      "location": "tests/unit/test_auditor.py:365",
+      "class": "correctness/logic",
+      "severity": "low",
+      "evidence": "In `TestAutoFix.test_fix_commit_pending`, line 365 calls `p.read_text(encoding='utf-8')` but the return value is never stored or asserted. The comment on line 366 says 'In a non-git context, commit SHA won't be found, so pending stays — Just verify the auditor didn't crash', yet the code reads the file without checking whether `pending` was actually preserved or replaced. The stated purpose of the test (verify auto-fix logic ran) is not validated by any assertion about file content; only `result.packets_scanned == 1` (line 368) is checked, which is unrelated to the fix behavior.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F11",
+      "title": "Test named 'test_multi_hunk_line_numbers' never asserts on line numbers",
+      "location": "tests/unit/test_coverage.py:120",
+      "class": "correctness/logic",
+      "severity": "low",
+      "evidence": "The method `TestAntiCheatDeletedFiles.test_multi_hunk_line_numbers` (line 120-143) is documented as 'Line numbers should be correct across multiple hunks.' The diff passed to `scanner.scan_diff` contains two hunks and one removed assertion (`-    assert result > 0`). The only assertion is `assert len(deleted) >= 1` (line 143), which only checks that the finding was created. No assertion is made about `deleted[0].line_number` or any line-number field. The test cannot distinguish a correct line-number from a wrong one, failing to validate the stated invariant.",
+      "intent_mismatch": false,
+      "status": "verified"
+    },
+    {
+      "id": "F12",
+      "title": "Fragile JSON parsing on CLI stdout in integration test may obscure real failures",
+      "location": "tests/integration/test_svp_full_workflow.py:247",
+      "class": "correctness/logic",
+      "severity": "low",
+      "evidence": "In `test_validate_incomplete_session_fails` (line 244-250), after asserting `result.returncode == 1`, the test immediately calls `output = json.loads(result.stdout)` on line 247. If the `aiv svp validate` command exits 1 due to an unhandled exception or prints a plain-text error instead of JSON, this line raises `json.JSONDecodeError` — a different exception class than `AssertionError` — making the failure signal misleading and the actual error hard to diagnose. The same pattern appears in `test_validate_missing_falsification_fails` at line 309. The test implicitly assumes the CLI always emits valid JSON to stdout on failure, but that assumption is not separately validated.",
+      "intent_mismatch": false,
+      "status": "verified"
+    },
+    {
+      "id": "F13",
+      "title": "Missing `_load_hook_config` patch in `test_functional_plus_packet_validates` diverges from helper pattern",
+      "location": "tests/unit/test_pre_commit_hook.py:159",
+      "class": "correctness/logic",
+      "severity": "info",
+      "evidence": "The helper `_mock_main` (line 108-122) patches `aiv.hooks.pre_commit._load_hook_config` to inject controlled config. `test_functional_plus_packet_validates` (line 157-172) calls `main()` directly, patching `_staged_files`, `_write_safety_snapshot`, `_run_git`, `_validate_packet`, and `_get_submodule_paths`, but NOT `_load_hook_config`. If the working directory during the test run contains an `.aiv.yml` with custom `functional_prefixes`, `main()` will use those prefixes instead of defaults, potentially producing a different exit code than expected. The test passes incidentally when no `.aiv.yml` is present (defaults are used), but the isolation is incomplete.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F14",
+      "title": "Path traversal in Packet Source resolution",
+      "location": "src/aiv/guard/runner.py:191-204",
+      "class": "path-traversal",
+      "severity": "high",
+      "evidence": "The only guard is `if not file_path.startswith('.github/')`. A PR body value such as `.github/x/../../../../../../etc/passwd` satisfies the prefix check while the subsequent `Path(file_path).exists()` / `resolved.read_text()` at lines 199-200 follow every `..` component, allowing reads of files outside the repository tree. No canonicalization (`Path.resolve()` + boundary check) is performed.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F15",
+      "title": "SSRF via link vitality checker — unrestricted URL fetch",
+      "location": "src/aiv/lib/validators/links.py:163-176",
+      "class": "ssrf",
+      "severity": "high",
+      "evidence": "`_head_check(url)` passes any URL string from packet evidence links directly to `urllib.request.urlopen` without validating the scheme or host. Python's urllib honours `file://`, `ftp://`, and plain HTTP to internal addresses. When `audit_links=True` (exposed as `--audit-links` in `aiv check`), an attacker-controlled packet can include `http://169.254.169.254/latest/meta-data/` or `file:///etc/shadow` and the validator will issue a real network/file request. No allowlist of permitted schemes or hosts exists.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F16",
+      "title": "URL injection via unvalidated git-remote owner/repo into GitHub API URLs",
+      "location": "src/aiv/cli/main.py:639-700",
+      "class": "injection",
+      "severity": "low",
+      "evidence": "`_detect_git_context()` at line 640 extracts `owner` and `repo` from the git remote URL via `re.search(r'[:/]([^/]+)/([^/.]+?)(?:\\.git)?$', url)`. The character class `[^/]+` for owner (and `[^/.]+` for repo) permits `?`, `#`, `@`, and other URL-structural characters. These values are interpolated verbatim into GitHub API URLs at lines 683 and 714 (`f\"https://api.github.com/repos/{owner}/{repo}/actions/runs?...\"`) without percent-encoding. A crafted git remote URL can inject query parameters or fragment identifiers that alter the effective API endpoint.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F17",
+      "title": "`aiv close` self-commits protocol packet with `--no-verify`, bypassing its own hook",
+      "location": "src/aiv/cli/main.py:1233-1241",
+      "class": "authz",
+      "severity": "medium",
+      "evidence": "At line 1237 the `close` command invokes `git commit --no-verify -m <msg>` to commit the Layer 2 verification packet it just generated. The protocol's stated goal is non-bypassable enforcement via pre-commit and pre-push hooks. Committing the packet itself with `--no-verify` means the packet commit is never validated by the hook pipeline: the hook's packet-content validation (`_validate_packet`) and atomic-commit rules are silently skipped for every `aiv close` invocation. The pre-push hook (layer 2) would catch this only if layer-2 evidence coverage is absent, but since the commit is the packet itself, the push hook also passes.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F18",
+      "title": "`git add` called without `--` end-of-options separator — flag injection via file paths",
+      "location": "src/aiv/cli/main.py:1879",
+      "class": "injection",
+      "severity": "low",
+      "evidence": "`subprocess.run([\"git\", \"add\", str(file), str(packet_path)], ...)` at line 1879 (and `[\"git\", \"add\", str(packet_path)]` at line 1233) omit the `--` separator. The `file` argument is a `typer.Argument` Path taken directly from the CLI; a caller passing a path that begins with `-` (e.g., `-p` or `--patch`) would cause git to interpret the string as a git-add flag rather than a filename. The same pattern appears for `git diff HEAD -- str(file)` calls at lines 1490–1500 which do include `--`, creating an inconsistency.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F19",
+      "title": "SSRF via LinkValidator outbound fetch of user-controlled packet URLs",
+      "location": "tests/unit/test_validators.py:427-479",
+      "class": "SSRF",
+      "severity": "high",
+      "evidence": "TestLinkVitality at test_validators.py:419-544 demonstrates that LinkValidator(audit_links=True).validate(packet) calls urllib urlopen with URLs extracted directly from packet content. At line 430, the mock raises HTTPError using req.full_url taken from the packet's intent evidence_link; at line 433 monkeypatch.setattr('aiv.lib.validators.links.urlopen', _mock_urlopen) identifies the production call site as aiv.lib.validators.links.urlopen. Tests at lines 444-463 (200 OK), 465-479 (URLError), 482-495 (403), and 498-543 (dedup) all confirm real outbound requests are made to packet-derived URLs. A packet whose Class E link points to an internal metadata endpoint (e.g. http://169.254.169.254/latest/meta-data/) would be fetched when audit_links=True is configured. Default is audit_links=False (line 421), but the feature is fully exercised and offered as a CLI/API option.",
+      "intent_mismatch": false,
+      "status": "verified"
+    },
+    {
+      "id": "F20",
+      "title": "Authorization bypass: pre-commit hook reads live .aiv.yml at commit time enabling policy self-disablement",
+      "location": "tests/unit/test_pre_commit_hook.py:308-314",
+      "class": "authz",
+      "severity": "medium",
+      "evidence": "test_hook_engine_uses_custom_config at test_pre_commit_hook.py:308-314 proves that main() consumes custom functional_prefixes loaded from .aiv.yml in the working directory. TestLoadHookConfig at lines 326-355 confirms _load_hook_config() reads the live (staged or unstaged) .aiv.yml from the current directory at commit time. A developer can include a .aiv.yml change in the same commit that sets functional_prefixes to an empty list or minimal set alongside functional code changes and no verification packet; the hook reads the modified config during that very pre-commit check, classifies the code files as non-functional, and exits 0 without enforcement. Lines 291-294 (test_custom_prefix_overrides_defaults) confirm that when custom_prefixes=('my_code/',) is active, src/bar.py is no longer functional. The hook provides no tamper-detection for config changes in staged files.",
+      "intent_mismatch": true,
+      "status": "verified"
+    },
+    {
+      "id": "F21",
+      "title": "CI secret leakage: subprocess inherits full parent os.environ in integration tests",
+      "location": "tests/integration/test_svp_full_workflow.py:51",
+      "class": "secrets",
+      "severity": "low",
+      "evidence": "The _run() helper at test_svp_full_workflow.py:43-61 builds env={**__import__('os').environ, 'PYTHONPATH': str(PROJECT_ROOT), 'PYTHONUTF8': '1'} and passes it to every aiv svp subprocess. This spreads all parent-process environment variables—including CI secrets such as GITHUB_TOKEN, AWS credentials, and any injected vault values—into the tested subprocess. If the aiv module prints env vars in debug mode or on crash, secrets appear in test logs. The unusual __import__('os') form at line 51 (instead of a top-level import os) does not mitigate the spread; it still resolves to os.environ at call time. Other test files (test_cli_commit_skip.py:78-84, test_cli_init.py:44-51) omit env= entirely, implicitly inheriting all parent variables as well.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F22",
+      "title": "Code injection risk: FalsificationScenario.test_code stores executable Python without documented sandboxing (UNVERIFIED)",
+      "location": "tests/unit/test_svp.py:625-630",
+      "class": "injection",
+      "severity": "info",
+      "evidence": "test_ai_session_passes_with_test_code at test_svp.py:620-636 validates that AI adversarial sessions (session_type=SessionType.AI_ADVERSARIAL_TRIAGE) must provide test_code in FalsificationScenario. At lines 625-630, test_code='def test_expired_token():\\n    assert login(expired) == False' stores raw executable Python code in the session JSON. Rule S016 (test_svp.py:608-638) enforces its presence for AI sessions, implying the field is intended for automated execution in the AI triage workflow. If the SVP subsystem eval()s or exec()s this field—or passes it to a test runner without sandboxing—arbitrary code supplied by an attacker who crafts or intercepts an AI session could execute on the validation host. UNVERIFIED: no test in scope demonstrates execution of test_code; the risk depends on production SVP implementation not covered by these test files. [runtime: Grep over src/ found no exec/eval/subprocess call on test_code field; session.py:252 only checks field presence. The injection risk is latent in the model design, not an active execution path in current production code.]",
+      "intent_mismatch": false,
+      "status": "verified"
+    },
+    {
+      "id": "F23",
+      "title": "R1 rubric omits mandatory Class E in two hook files",
+      "location": "src/aiv/hooks/pre_commit.py:240",
+      "class": "doc-code-drift",
+      "severity": "high",
+      "evidence": "pre_commit.py:240 prints 'REQUIRES: [A + B]' for R1; pipeline.py:183 enforces {A, B, E} (EvidenceClass.INTENT mandatory). Same error independently at .husky/pre-commit:99. Developers following the rubric will skip Class E evidence for R1 changes and be blocked by the pipeline without warning.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F24",
+      "title": "R3 rubric brackets D and F as optional; pipeline enforces all six as mandatory",
+      "location": "src/aiv/hooks/pre_commit.py:237",
+      "class": "doc-code-drift",
+      "severity": "high",
+      "evidence": "pre_commit.py:237 prints 'REQUIRES: A + B + C + E + [D + F]' for R3. Bracket notation implies D and F are optional. pipeline.py:190-197 _TIER_REQUIRED[R3] = {A, B, C, D, E, F} with no optional carve-out. Same bracket notation appears independently at .husky/pre-commit:93.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F25",
+      "title": "generate emits v2.1 packet header; close emits v2.2 — undocumented schema split",
+      "location": "src/aiv/cli/main.py:514",
+      "class": "doc-code-drift",
+      "severity": "medium",
+      "evidence": "cli/main.py:514 emits '# AIV Verification Packet (v2.1)' in generate; line 1143 emits '# AIV Verification Packet (v2.2)' in close. guard/runner.py:224 accepts both. No changelog or schema diff between v2.1 and v2.2 was found in any read file. Developers using generate get v2.1; the change-lifecycle path produces v2.2.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F26",
+      "title": "aiv close uses git commit --no-verify, bypassing all hooks for the packet commit",
+      "location": "src/aiv/cli/main.py:1236",
+      "class": "security-bypass",
+      "severity": "low",
+      "evidence": "cli/main.py:1236-1241 runs 'git commit --no-verify' to commit the verification packet. pre_push.py:16 docstring states compliance is non-bypassable. The primary packet-generation command contradicts this guarantee by programmatically skipping every pre-commit and pre-push hook.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F27",
+      "title": "ValidationPipeline docstring lists 7 stages; 8 are implemented",
+      "location": "src/aiv/lib/validators/pipeline.py:48",
+      "class": "doc-code-drift",
+      "severity": "medium",
+      "evidence": "pipeline.py:48-56 docstring enumerates stages 1-7, omitting 'Risk-Tier Evidence Requirements' implemented as Stage 5 at line 131. cli/main.py:323 references '8-stage pipeline' in quickstart. The docstring omission misleads contributors about what the pipeline enforces.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F28",
+      "title": "dir() used to check local variable existence; should be locals()",
+      "location": "src/aiv/cli/main.py:1664",
+      "class": "logic-error",
+      "severity": "info",
+      "evidence": "cli/main.py:1664 evaluates '\"changed_symbols\" in dir()'. dir() with no argument returns scope names but is unreliable for testing whether a specific local variable is bound in the current frame; locals() is the correct idiom.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F29",
+      "title": "Class B evidence links embed pre-commit HEAD SHA; links are stale after actual commit",
+      "location": "src/aiv/lib/evidence_collector.py:283",
+      "class": "stale-data",
+      "severity": "medium",
+      "evidence": "collect_class_b at evidence_collector.py:283 calls _run_git('rev-parse', 'HEAD') before the commit occurs. The SHA embedded in Class B GitHub blob permalinks equals the parent commit, not the SHA of the commit that introduces the changed files. The link content is accurate but the SHA is wrong.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F30",
+      "title": ".gitignore listed as functional file requiring a packet; undocumented in developer guidance",
+      "location": "src/aiv/lib/config.py:163",
+      "class": "doc-code-drift",
+      "severity": "low",
+      "evidence": "HookConfig.functional_root_files at config.py:163 includes '.gitignore'. .husky/pre-commit:63 also includes '.gitignore' and '.env.example' in its IS_FUNCTIONAL regex. Neither .cursorrules nor any other developer-facing doc read during this audit documents these files as requiring verification packets.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F31",
+      "title": "GuardResult.compliance_level never set to COMPLIANT on pass; stays at Pydantic default L1",
+      "location": "src/aiv/guard/models.py:182",
+      "class": "doc-code-drift",
+      "severity": "low",
+      "evidence": "GuardResult.finalize() at models.py:182-188 sets compliance_level='NON-COMPLIANT' when findings exist but leaves the field as its Pydantic default 'L1' on a clean pass. No code path assigns the string 'COMPLIANT'. Downstream consumers checking compliance_level == 'COMPLIANT' will always get a false negative.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F32",
+      "title": "protocol-audit CI job guarded by push-event filter; does not run on PRs",
+      "location": ".github/workflows/ci.yml:67",
+      "class": "intent-drift",
+      "severity": "medium",
+      "evidence": "ci.yml:67 has 'if: github.event_name == push' on the protocol-audit job. pre_push.py:16 docstring describes this CI job as layer-3 defense that 'catches --no-verify push (server-side)'. PR branches are not covered by push-event CI; a --no-verify push on a PR branch is undetected until post-merge.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F33",
+      "title": "PACKET_PREFIXES constant triplicated across three modules with no shared source of truth",
+      "location": "src/aiv/hooks/pre_commit.py:46",
+      "class": "duplicate-constant",
+      "severity": "info",
+      "evidence": "Identical list literal ['.aiv/', '.github/aiv-packets/'] appears as PACKET_PREFIXES at pre_commit.py:46-50, pre_push.py:40-44, and auditor.py:51-55. Adding or renaming a packet storage path requires three independent edits with no mechanism to detect skipped updates. [runtime: Triplication confirmed: identical 3-element tuple at pre_commit.py:46-50, pre_push.py:40-44, auditor.py:51-55. Finding description cited wrong values ('.aiv/'); actual values are '.github/aiv-packets/VERIFICATION_PACKET_', '.github/VERIFICATION_PACKET_', '.github/aiv-packets/PACKET_'. Core claim (no shared source of truth) stands.]",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F34",
+      "title": "has_provenance_evidence checks claims only; ignores evidence_classes_present field",
+      "location": "src/aiv/lib/models.py:268",
+      "class": "logic-error",
+      "severity": "info",
+      "evidence": "VerificationPacket.has_provenance_evidence at models.py:268-271 iterates self.claims for EvidenceClass.PROVENANCE. A packet with Class F in a standalone evidence section (reflected in evidence_classes_present) but lacking a PROVENANCE-typed claim object returns False, producing a false negative used by evidence.py:38 to gate E010 enforcement.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F35",
+      "title": "Method docstring claims Phase 4 is 'injected into session JSON via model injection' but code calls CLI",
+      "location": "tests/integration/test_svp_full_workflow.py:319-322",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "Docstring at line 319-322 reads: 'Phase 4 (ownership commit) is injected directly into the session JSON because it requires actual git operations that we mock here.' The actual test code at lines 380-403 calls `self._run(\"ownership\", \"42\", ...)` — a full CLI subprocess invocation, not JSON injection. The stated rationale (requires git operations) is also contradicted by the CLI approach, which passes a literal SHA of 40 'a' characters without any git operations.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F36",
+      "title": "Module docstring says 'all 4 phases' and Phase 4 is 'manual — tested via model injection', both incorrect",
+      "location": "tests/integration/test_svp_full_workflow.py:3-17",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "Module docstring lists phases 1-4 and describes Phase 4 as 'Ownership Lock (manual — tested via model injection)'. However: (1) the SVP protocol has 5 phases numbered 0-4 (Phase 0 = Sanity/AIV Guard check, confirmed by `SVPPhase.SANITY.value == \"phase_0_sanity\"` in test_svp.py:161 and validated via `phase_0_complete` assertions at line 408); (2) Phase 4 is exercised via `self._run(\"ownership\", ...)` CLI subprocess, not model injection. The module-level description is stale from an earlier design.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F37",
+      "title": "Test method named 'test_template_is_not_packet' but asserts template IS a packet",
+      "location": "tests/unit/test_pre_commit_hook.py:35-38",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "Method name at line 35 is `test_template_is_not_packet`. The assertion at line 38 is `assert _is_packet(\".github/aiv-packets/VERIFICATION_PACKET_TEMPLATE.md\") is True`. The inline comment (line 36-37) acknowledges the contradiction: '# Templates match the pattern — they ARE packets structurally'. The test name is the exact opposite of the behavior verified. A reviewer relying on the test name to understand `_is_packet` semantics would form a wrong mental model.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F38",
+      "title": "Docstring says 'main' should NOT be mutable when excluded from custom set, but assertion says it IS mutable",
+      "location": "tests/unit/test_models.py:296-305",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "Method docstring at line 297 reads: \"'main' should NOT be mutable if excluded from custom set.\" The assertion at line 304 is `assert link.is_immutable is False`, meaning the URL IS mutable (not immutable). The inline comment '# still non-SHA, so still mutable' at line 303 describes the actual behavior correctly — a non-SHA ref remains mutable regardless of the custom mutable_branches set — but the docstring states the inverse. Anyone reading the docstring to understand immutability rules for custom configurations would conclude the opposite of what the code enforces.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F39",
+      "title": "Auto-fix test approves a 'fixed' Class E link that uses /blob/main/ — itself a CLASS_E_MUTABLE violation",
+      "location": "tests/unit/test_auditor.py:370-381",
+      "class": "intent mismatch",
+      "severity": "low",
+      "evidence": "TestAutoFix.test_fix_class_e_local_ref at line 370-381 calls `auditor.audit(tmp_path, fix=True)` on a packet with a plain-text Class E link. The comment at line 379 says 'even without git, falls back to \"main\"', meaning the auto-fix produces a URL containing `/blob/main/`. The test then asserts only that `https://github.com/` is present (line 380). However, a `/blob/main/` URL is exactly what the `CLASS_E_MUTABLE` rule detects as a violation (confirmed by `test_mutable_link_detected` at line 145-155 which flags `/blob/main/` as ERROR). The auto-fix test accepts output that the auditor's own rules would immediately re-flag as non-compliant, defeating the stated purpose of the fix feature.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F40",
+      "title": "TestEvidenceTodoSeverity docstring pins implementation line numbers that will drift",
+      "location": "tests/unit/test_auditor.py:243-244",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "Class docstring at lines 243-244 reads: 'These tests cover the auditor change in auditor.py#L251-L262 (CLASS_E_NO_URL severity escalation) and auditor.py#L276-L296 (evidence_section tracking).' Hard-coded line numbers in a test docstring pointing to a sibling source file become stale on any insertion or deletion in `auditor.py`. When they drift they mislead anyone debugging via the test descriptions.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F41",
+      "title": "test_r0_has_class_b_and_a asserts Class E presence for R0, but R0 does not require E per REQUIRED_CLASSES",
+      "location": "tests/unit/test_coverage.py:36-40",
+      "class": "intent mismatch",
+      "severity": "low",
+      "evidence": "Test name `test_r0_has_class_b_and_a` implies R0 generates only Class B and A evidence sections. But line 40 asserts `assert \"### Class E\" in result  # structurally required by parser`. The guard constant `REQUIRED_CLASSES[\"R0\"] == [\"A\", \"B\"]` (confirmed by test_guard.py:449) does not list E as required for R0. The comment 'structurally required by parser' conflicts with the protocol-defined tier requirement, creating ambiguity about whether Class E is protocol-required or merely a template default for R0. The test name omits E entirely, making the requirement invisible.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F42",
+      "title": "test_fix_commit_pending discards read_text result and verifies no fix behavior",
+      "location": "tests/unit/test_auditor.py:361-368",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "TestAutoFix.test_fix_commit_pending at line 361-368 calls `auditor.audit(tmp_path, fix=True)` then executes `p.read_text(encoding='utf-8')` at line 365 but discards the return value — no assertion is made on the file content. The comment at lines 366-367 says 'In a non-git context, commit SHA won't be found, so pending stays / Just verify the auditor didn't crash'. The test's stated purpose is to verify the auto-fix for COMMIT_PENDING, but it only confirms the auditor did not raise an exception. Whether the file was modified, left unchanged, or corrupted is completely unverified, making this a non-test for its declared intent.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F43",
+      "title": "pre-commit exception handler returns True — enforcement bypassed",
+      "location": "src/aiv/hooks/pre_commit.py:212-214",
+      "class": "error-handling",
+      "severity": "critical",
+      "evidence": "_validate_packet wraps the entire subprocess invocation in a bare `except Exception` block and returns True on any error (line 212-214: `except Exception as exc: print(f'WARNING: Packet validation skipped ({exc})') return True`). Any transient error (broken pipe, missing Python, import failure) silently allows the commit through, defeating the enforcement guarantee stated in the provisional intent.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F44",
+      "title": "list_pr_files silently returns partial file list on pagination error",
+      "location": "src/aiv/guard/github_api.py:116-117",
+      "class": "error-handling",
+      "severity": "high",
+      "evidence": "In `list_pr_files`, when `_request` raises `GitHubAPIError` the loop breaks immediately (line 116-117: `except GitHubAPIError: break`). The caller receives whatever pages were fetched before the error with no indication of truncation. The guard then validates scope inventory and critical-surface detection against an incomplete file list, potentially allowing uncovered files to escape evidence requirements.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F45",
+      "title": "list_run_artifacts silently returns partial artifact list on pagination error",
+      "location": "src/aiv/guard/github_api.py:159-160",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "In `list_run_artifacts`, when `_request` raises `GitHubAPIError` on any page the loop breaks (line 159-160: `except GitHubAPIError: break`). The `_inspect_class_a_run` caller then searches the truncated list for the `aiv-evidence` artifact. A transient network error mid-pagination can cause a PASS on the artifact check even when the artifact exists only on a later page.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F46",
+      "title": "EvidenceValidator.validate_file_type_triggers is dead code — never called",
+      "location": "src/aiv/lib/validators/evidence.py:261",
+      "class": "dead-code",
+      "severity": "high",
+      "evidence": "`validate_file_type_triggers` is defined at `evidence.py:261` but is not invoked anywhere in `ValidationPipeline.validate` (`pipeline.py:69-177`), `EvidenceValidator.validate` (`evidence.py:29-52`), the guard runner (`runner.py`), or any CLI command. Database schema changes, dependency bumps, API schema changes, and Dockerfile changes never trigger the Class D requirement, making all four trigger rules (lines 275-301) permanently inactive.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F47",
+      "title": "collect_class_b emits non-functional GitHub permalinks when git rev-parse fails",
+      "location": "src/aiv/lib/evidence_collector.py:283-285",
+      "class": "error-handling",
+      "severity": "high",
+      "evidence": "`collect_class_b` calls `_run_git('rev-parse', 'HEAD')` and falls back to `head_sha = 'unknown'` on failure (lines 283-285). All subsequent permalink URLs are assembled with this literal string (e.g. `https://github.com/org/repo/blob/unknown/src/foo.py#L1-L20`), producing evidence that looks syntactically valid but resolves to a 404. The caller has no way to detect the degradation.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F48",
+      "title": "aiv close commits verification packet with --no-verify, bypassing its own hook",
+      "location": "src/aiv/cli/main.py:1237",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "The `close` command stages the Layer 2 packet and then runs `git commit --no-verify -m commit_msg` (line 1237). The pre-commit hook's Rule 6 (packet-only update) would pass cleanly without `--no-verify`, so the flag is unnecessary and also bypasses any other hooks (e.g., third-party linters). The tool that enforces non-bypassability unconditionally bypasses its own gate.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F49",
+      "title": "close command silently fabricates empty claims when evidence files are unreadable",
+      "location": "src/aiv/cli/main.py:1085",
+      "class": "error-handling",
+      "severity": "high",
+      "evidence": "Inside the `close` command, the loop that reads each evidence file to extract claims and Class B refs catches all exceptions with a bare `except Exception: pass` (line 1085). A corrupt, missing, or permission-denied evidence file causes the Layer 2 packet to be generated with no claims extracted from it. The fallback at lines 1101-1106 substitutes a generic 'Changes to file X are verified by collected evidence' claim, which is untestable boilerplate rather than the real claims from the evidence file.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F50",
+      "title": "load_change silently returns None on any parse or I/O error",
+      "location": "src/aiv/lib/change.py:82",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "`load_change` catches `(json.JSONDecodeError, Exception)` (line 82), meaning disk full, permission denied, or partial-write corruption all produce `None` — indistinguishable from 'no active change'. In `pre_commit.py:381-382`, `_has_active_change()` calls `load_change()` and treats `None` as 'no active change', which causes the hook to fall through to legacy rules and potentially block commits that should have been allowed in change-context mode.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F51",
+      "title": "_run_git in pre_commit.py never checks returncode — silent git failures",
+      "location": "src/aiv/hooks/pre_commit.py:65-71",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "The `_run_git` helper at lines 55-71 runs git and returns `result.stdout.strip()` without checking `result.returncode`. When git is not installed, the working directory is not a repo, or the command fails, the function returns an empty string. Downstream callers like `_staged_files` (line 75) treat an empty string as 'nothing staged' and return an empty list, causing the hook to exit with code 0 and allow the commit.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F52",
+      "title": "_run_git in evidence_collector.py never checks returncode — silent failures",
+      "location": "src/aiv/lib/evidence_collector.py:249-255",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "`_run_git` in `evidence_collector.py` (lines 249-255) similarly returns empty string on any git failure. `collect_class_c()` calls `_run_git('diff', '--cached')` and `_run_git('diff', '--cached', '--name-status')` — on failure both return empty strings, so `class_c_data` reports no test files modified, no assertions removed, and `anti_cheat_clean=True`, producing falsely clean Class C evidence.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F53",
+      "title": "get_file_content has unhandled binascii.Error on malformed base64",
+      "location": "src/aiv/guard/github_api.py:188",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "In `get_file_content` (line 188), `base64.b64decode(data['content'])` is called with no exception handling. The GitHub API can return truncated or padded base64 when content is large. `base64.b64decode` raises `binascii.Error` (a subclass of `ValueError`) for invalid padding, which is not caught in `get_file_content` or its callers in `canonical.py`. This propagates as an unhandled exception and crashes the guard run.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F54",
+      "title": "resolve_changed_symbols uses O(n²) ast.walk inside ast.walk loop",
+      "location": "src/aiv/lib/evidence_collector.py:622-626",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "At lines 622-626, for every node found by the outer `ast.walk(tree)`, the code runs another full `ast.walk(tree)` to find its parent ClassDef. For a file with N AST nodes, this is O(N²). Additionally, `node in ast.iter_child_nodes(parent)` uses object identity, so methods of a class nested inside a function will not find their ClassDef parent, silently receiving no class prefix and producing incorrect symbol names in the Class B evidence.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F55",
+      "title": "Safety snapshots accumulate indefinitely — potential disk exhaustion",
+      "location": "src/aiv/hooks/pre_commit.py:117-140",
+      "class": "resource-handling",
+      "severity": "low",
+      "evidence": "_write_safety_snapshot creates a new timestamped directory under `.cache/bb-safety-snapshots/` on every pre-commit run (line 119-121) but there is no cleanup, rotation, or size-limit mechanism anywhere in the codebase. In an active repository, every commit attempt (including rejected ones) generates a snapshot containing full diffs and untracked file copies, which will accumulate without bound.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F56",
+      "title": "_check_evidence marks auto_fixable=True for mutable link when SHA unavailable",
+      "location": "src/aiv/lib/auditor.py:492",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "In `_check_evidence`, the EVIDENCE_MUTABLE_LINK finding is created with `auto_fixable=True` (line 492) regardless of whether `commit_sha` is None. The `_apply_fixes` method (line 667) checks `short_sha = commit_sha[:7] if commit_sha else None` and silently skips the fix when `short_sha` is None. So `auto_fixable=True` is reported to the user, but `--fix` mode silently does nothing for evidence files when their SHA is unknown.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F57",
+      "title": "GuardResult.compliance_level is never computed — hardcoded to 'L1'",
+      "location": "src/aiv/guard/models.py:123",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "`GuardResult` initialises `compliance_level='L1'` (line 123). `finalize()` only updates it to `'NON-COMPLIANT'` on BLOCK findings (line 186). When there are WARN findings but no BLOCK findings, the result is PASS with `compliance_level='L1'` no matter how many warnings exist. There is no code path that computes a graduated compliance level ('L2', 'CONDITIONAL', etc.) from the actual findings.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F58",
+      "title": "_get_introducing_commit returns unvalidated last line as commit SHA",
+      "location": "src/aiv/lib/auditor.py:115-117",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "`_get_introducing_commit` splits `stdout.strip()` on newlines and returns `shas[-1]` (line 117: `return shas[-1] if shas and shas[-1] else None`). If git outputs trailing whitespace or an unexpected error message as the last line, the function returns that garbage string as a commit SHA. Callers use this SHA to build GitHub URLs and to decide `auto_fixable` status, propagating the invalid value silently.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F59",
+      "title": "Two divergent _is_bug_fix implementations with different heuristics",
+      "location": "src/aiv/lib/validators/evidence.py:415",
+      "class": "dead-code",
+      "severity": "medium",
+      "evidence": "`EvidenceValidator._is_bug_fix` (evidence.py:415-440) checks `intent.verifier_check` and claim descriptions using word-boundary regex patterns. `auditor._is_bug_fix_claim` (auditor.py:134-152) uses a different approach: it strips 'auto-fix' and '--fix' before matching. The two implementations diverge: the auditor checks for FIX_NO_CLASS_F in commit history while the validator enforces Class F on bug-fix packets. The same packet could be assessed differently by each, creating inconsistent enforcement.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F60",
+      "title": "load_hook_config silently falls back to defaults on any YAML error",
+      "location": "src/aiv/lib/config.py:284-285",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "`load_hook_config` wraps the entire YAML parse and config extraction in `try: ... except Exception: pass` (lines 263-285). Any error — malformed YAML, wrong type for `functional_prefixes`, I/O error — silently falls back to hardcoded defaults. This means a corrupt `.aiv.yml` that changes which files require packets is silently ignored, potentially causing the hook to incorrectly classify files as functional or non-functional without any diagnostic.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F61",
+      "title": "Dead read: p.read_text() return value discarded in test_fix_commit_pending",
+      "location": "tests/unit/test_auditor.py:365",
+      "class": "dead-code",
+      "severity": "medium",
+      "evidence": "Line 365: `p.read_text(encoding=\"utf-8\")` is called with no assignment and the return value is immediately discarded. The comment on the next line reads 'Just verify the auditor didn't crash', but zero inspection of the file content occurs. The test was evidently intended to verify that the auto-fix wrote back to disk (or didn't corrupt the file), but the actual post-fix state is never examined. The test would pass even if the fix silently truncated the packet file to empty. Sibling test test_fix_class_e_local_ref (line 378) correctly captures and asserts on the read result.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F62",
+      "title": "Six subprocess.run calls in test_cli_init.py discard results without check=True",
+      "location": "tests/unit/test_cli_init.py:54-59,63-68,76-81,128-133,141-146,190-195",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "Six test methods call subprocess.run to invoke `aiv init` but neither assign the return value nor pass check=True: test_creates_packets_dir (lines 54-59), test_creates_evidence_dir (lines 63-68), test_installs_pre_commit_hook (lines 76-81), test_installs_pre_push_hook (lines 128-133), test_pre_push_hook_content_mentions_no_verify (lines 141-146), test_no_hook_skips_installation (lines 190-195). If aiv init exits non-zero (ImportError, unhandled exception, bad env), subprocess.run returns silently and the test proceeds to assert on filesystem side-effects, producing confusing AssertionError messages that point to the wrong root cause. Contrast: test_creates_aiv_yml (line 43) correctly captures the result and asserts result.returncode == 0.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F63",
+      "title": "subprocess.TimeoutExpired unhandled in integration test helper _run()",
+      "location": "tests/integration/test_svp_full_workflow.py:45-61",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "The _run() helper (lines 43-61) calls subprocess.run with timeout=30 (line 49) inside a conditional-assert block but wraps none of this in a try/except. If any aiv svp subcommand hangs for 30 s, subprocess.TimeoutExpired propagates as an uncaught exception, bypassing the expect_ok assertion path at lines 55-60 and appearing as a raw traceback rather than a test failure. All nine test methods in TestSVPFullWorkflow invoke _run() one or more times, so a single hang corrupts the entire class run. The subprocess.CompletedProcess stdout/stderr that would help diagnose the hang is also lost because TimeoutExpired carries only cmd and timeout.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F64",
+      "title": "Unguarded evidence_files[0] in test_reason_in_methodology risks IndexError",
+      "location": "tests/unit/test_cli_commit_skip.py:136-137",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "test_reason_in_methodology (lines 129-138): after calling _run_aiv_commit() with the return value discarded (lines 131-134), line 136 collects `evidence_files = list(evidence_dir.glob('EVIDENCE_*.md'))` and line 137 immediately accesses `evidence_files[0]` with no length assertion. If _run_aiv_commit fails (non-zero exit or dry-run writes nothing), evidence_files is an empty list and line 137 raises IndexError at runtime rather than a meaningful test assertion. Sibling test test_reason_in_class_a (line 124) correctly adds `assert len(evidence_files) == 1, f'Expected 1 evidence file, got {len(evidence_files)}'` before accessing index 0, confirming the missing guard is an oversight rather than design.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F65",
+      "title": "auditor.audit() return value discarded in test_fix_class_e_local_ref",
+      "location": "tests/unit/test_auditor.py:377",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Line 377: `auditor.audit(tmp_path, fix=True)` is called with no assignment. The AuditResult (containing packets_scanned, packets_with_issues, findings) is silently thrown away. The test only inspects the rewritten file content (lines 378-381) and never verifies that the audit detected the expected finding before the fix or that packets_scanned==1 after. Compare test_fix_commit_pending (lines 363-368) which captures `result = auditor.audit(tmp_path, fix=True)` and asserts `result.packets_scanned == 1`. The discarded result means a regression where fix() produces zero findings or scans zero packets would go undetected.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F66",
+      "title": "HTTPError mock passes empty dict for hdrs (expects HTTPMessage) in link vitality tests",
+      "location": "tests/unit/test_validators.py:433,487",
+      "class": "error-handling",
+      "severity": "info",
+      "evidence": "test_audit_links_404_blocks (line 433) and test_audit_links_403_blocks (line 487) construct `HTTPError(req.full_url, N, msg, {}, None)` where the fourth argument (hdrs) is an empty dict `{}`. urllib.error.HTTPError expects an http.client.HTTPMessage instance for hdrs; a dict lacks methods like getheader(), get_all(), items() that HTTPMessage provides. If LinkValidator or any intervening error-handling path calls any HTTPMessage-specific method on error.hdrs, the mock raises AttributeError instead of the expected behavior, silently corrupting the assertion. Additionally, fp=None (fifth argument) means calling error.read() or error.close() on the mock exception raises AttributeError — a risk if the validator uses the file-like interface of HTTPError.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F67",
+      "title": "IntentSection imported redundantly inside fixture body and test method",
+      "location": "tests/unit/test_validators.py:395,500",
+      "class": "dead-code",
+      "severity": "info",
+      "evidence": "IntentSection is imported at module level (line 22: `from aiv.lib.models import ... IntentSection ...`). It is re-imported unnecessarily inside the _make_packet_with_url fixture body at line 395 (`from aiv.lib.models import ArtifactLink, IntentSection`) and again inside test_audit_links_deduplicates_urls at line 500 (`from aiv.lib.models import ArtifactLink, IntentSection`). The second occurrence of IntentSection in each of these two in-function imports is dead code — it rebinds a local name that shadows the already-available module-level binding without effect. Note ArtifactLink is absent from the module-level imports (lines 17-26) and IS needed in-function; only IntentSection is redundant.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F68",
+      "title": "_run_aiv_commit return value discarded in both TestSkipReasonStampedInEvidence methods",
+      "location": "tests/unit/test_cli_commit_skip.py:118-121,131-134",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "In test_reason_in_class_a (lines 118-121) and test_reason_in_methodology (lines 131-134) the result of `_run_aiv_commit(staged_repo, [..., '--dry-run'])` is not captured. _run_aiv_commit returns a subprocess.CompletedProcess; if aiv commit exits non-zero (e.g. tier-check rejects the R0 flag, or an import error), the failure is invisible and the test proceeds into evidence-file assertions, producing misleading failures. Unlike test_skip_checks_rejected_for_higher_tiers (line 92) and test_skip_checks_without_reason_fails (line 101) which both capture and assert on the return code, the two StampedInEvidence tests have no process-exit guard at all.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F69",
+      "title": "aiv close commits verification packet with --no-verify, bypassing hook validation",
+      "location": "src/aiv/cli/main.py:1236-1237",
+      "class": "correctness",
+      "severity": "high",
+      "evidence": "The close command runs `git commit --no-verify -m <msg>` for the packet commit. All pre-commit hook gates — including `aiv check` (Rule 1) and `aiv audit` (Rule 6) — are skipped. A structurally malformed, incomplete, or tampered verification packet can therefore be committed to the repository without any hook-level structural validation. Rule 6 of the hook was designed to allow packet-only commits, so --no-verify is unnecessary and actively circumvents the intended enforcement layer.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F70",
+      "title": "S004 complexity-estimate warning is dead code — predicted_complexity is non-optional",
+      "location": "src/aiv/svp/lib/validators/session.py:113",
+      "class": "correctness",
+      "severity": "medium",
+      "evidence": "`_validate_prediction` checks `if pred.predicted_complexity is None:` at line 113. In the SVPPrediction Pydantic v2 model, `predicted_complexity` is typed as `Complexity` without `Optional[...]` or a default of None. Pydantic raises a ValidationError before the session object is constructed if the field is absent, so the None branch is unreachable. S004 warnings are never emitted regardless of session content.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F71",
+      "title": "_build_evidence_class_results() sets valid=present without independent quality validation",
+      "location": "src/aiv/guard/runner.py:383",
+      "class": "correctness",
+      "severity": "medium",
+      "evidence": "`_build_evidence_class_results()` assigns `valid=present` where `present` is a boolean indicating the evidence class was found in the packet. No independent check of artifact URL integrity, SHA pinning, or content correctness is performed. A Class A (Execution) entry with a broken URL, wrong SHA, or empty artifact field receives `valid=True` as long as the class letter appears in the packet, defeating the per-class validation gate.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F72",
+      "title": "ArtifactLink.from_url() SHA-pinning detection false-positive on short hex-format strings",
+      "location": "src/aiv/lib/models.py:132-133",
+      "class": "correctness",
+      "severity": "medium",
+      "evidence": "`from_url()` classifies a URL fragment as SHA-pinned if `len(ref) >= min_sha_length and all(c in '0123456789abcdef' for c in ref.lower())`. `min_sha_length` defaults to 7. A mutable git tag whose name consists entirely of hex characters and is ≥7 chars long (e.g., tag '1a2b3c4') will be treated as an immutable commit SHA, suppressing the immutability warning. The artifact's referent is mutable but the validator reports it as pinned.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F73",
+      "title": "score_session() never emits bug_missed RatingEvents; bugs_missed and ELO penalty are permanently zero",
+      "location": "src/aiv/svp/lib/rating.py:23-124",
+      "class": "correctness",
+      "severity": "low",
+      "evidence": "`score_session()` iterates probe findings and falsification scenarios but contains no code path that appends `RatingEvent(event_type='bug_missed', ...)`. `RATING_POINTS['bug_missed'] = -25` is defined in models.py and `VerifierRating.bugs_missed` field exists, but `calculate_rating()` derives `rating.bugs_missed` from events whose type starts with 'bug_caught', not 'bug_missed'. As a result, no verifier ever accrues the -25 ELO penalty for missed bugs and `bugs_missed` is always 0.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F74",
+      "title": "Multi-line or prose-trailing http artifact string passed whole to ArtifactLink, silently bypassing immutability checks",
+      "location": "src/aiv/lib/parser.py:585",
+      "class": "correctness",
+      "severity": "low",
+      "evidence": "The branch `artifact_raw if artifact_raw.startswith('http') else ...` passes the full raw string to `ArtifactLink.from_url()` when it begins with 'http'. If the raw string contains trailing prose or embedded newlines (a multi-line content block), Pydantic URL validation rejects it and the except clause returns the raw string as a plain str — not an ArtifactLink. Downstream validators in EvidenceValidator and LinkValidator guard on `isinstance(artifact, ArtifactLink)` and skip SHA-pinning and immutability checks entirely for such artifacts.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F75",
+      "title": "validate_canonical() only validates attestations[0]; all subsequent attestations are unchecked",
+      "location": "src/aiv/guard/canonical.py:159-160",
+      "class": "correctness",
+      "severity": "low",
+      "evidence": "`validate_canonical()` accesses `canonical_data['attestations'][0]` and checks its fields (verifier_id, timestamp, signature) without iterating over the list. Packets with multiple attestations — required for co-verification in AI_ADVERSARIAL_TRIAGE sessions — have only their first attestation validated. Subsequent attestations can be structurally invalid, unsigned, or reference nonexistent verifiers without triggering any error.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F76",
+      "title": "is_valid returns True while status==FAIL in strict mode — callers get contradictory signals",
+      "location": "src/aiv/lib/validators/pipeline.py:163-169",
+      "class": "correctness",
+      "severity": "medium",
+      "evidence": "In strict mode, `validate()` sets `result.status = ValidationStatus.FAIL` when warnings are present (line 163-169). `ValidationResult.is_valid` at models.py:307-309 returns `not self.blocking_errors` — it checks only blocking errors, not warnings or status. A caller that reads `result.is_valid` sees True while `result.status` is FAIL. CI integrations and hook runners that branch on `is_valid` will incorrectly allow a strict-mode warning-failing session through.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F77",
+      "title": "ELO-tier boundary contradiction: from_elo(500)==COMPETENT but initial VerifierRating at ELO 500 asserts NOVICE",
+      "location": "tests/unit/test_svp.py:155,389,885",
+      "class": "correctness/logic",
+      "severity": "low",
+      "evidence": "test_verifier_tier_from_elo (line 155) asserts VerifierTier.from_elo(500) == VerifierTier.COMPETENT, establishing the COMPETENT boundary at ELO 500. test_initial_rating (line 388-389) asserts r.elo_rating == 500 AND r.tier == VerifierTier.NOVICE. test_starts_at_500 (line 883-885) repeats this with calculate_rating(\"new-user\", []): elo_rating==500, tier==NOVICE. These tests are mutually contradictory: if from_elo(500) maps to COMPETENT, then a freshly created VerifierRating whose elo_rating is 500 must have tier COMPETENT, not NOVICE. test_apply_event_positive (line 392-399) confirms update_tier() is called on events: starting from ELO=500/NOVICE, adding 50 points yields ELO=550/COMPETENT — consistent with from_elo(550)==COMPETENT but inconsistent with the initial state where ELO=500 is already at the COMPETENT threshold.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F78",
+      "title": "Weak OR instead of AND in unlinked-evidence multi-claim assertion allows partial bug to pass silently",
+      "location": "tests/unit/test_validators.py:608",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "test_unlinked_evidence_not_repeated_across_all_claims (line 588) intends to verify that a single unlinked evidence item is consumed only by the FIRST unenriched claim, leaving claims 2 and 3 unenriched. The key assertion at line 608 reads: `assert artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]`. With OR semantics, the assertion passes whenever at least one of the two remaining claims differs from claim 1. If the bug is that unlinked evidence is applied to claim 2 but NOT to claim 3 (artifacts[0]==\"src/handler.py\", artifacts[1]==\"src/handler.py\", artifacts[2]==\"See Evidence\"), then artifacts[2] != artifacts[0] is True and the OR passes — even though claim 2 incorrectly received the artifact. The correct predicate is AND: `assert artifacts[1] != artifacts[0] and artifacts[2] != artifacts[0]`.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F79",
+      "title": "test_evidence_dir_none_skips_scan passes vacuously — empty packets_dir makes the assertion trivially true",
+      "location": "tests/unit/test_auditor.py:875-884",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "test_evidence_dir_none_skips_scan (line 875) creates packets_dir without writing any packets, then calls auditor.audit(packets_dir, evidence_dir=None) and asserts result.packets_scanned == 0 and len(result.findings) == 0. Both assertions are trivially satisfied because packets_dir is empty — no packets are available to scan regardless of what evidence_dir=None does. The test never places any evidence files in a real evidence directory and verifies they are skipped, so it does not actually demonstrate that evidence_dir=None causes evidence scanning to be bypassed. A correct test would populate evidence_dir with at least one evidence file, pass evidence_dir=None, and confirm the evidence file is NOT scanned.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F80",
+      "title": "json.loads(result.stdout) called unconditionally after returncode==1 in integration tests — non-JSON CLI output yields JSONDecodeError masking the real failure",
+      "location": "tests/integration/test_svp_full_workflow.py:247,309",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "test_validate_incomplete_session_fails (line 247): after asserting result.returncode == 1, the test immediately calls `output = json.loads(result.stdout)`. If the CLI emits a Python traceback, an exception message, or any non-JSON text to stdout on error, this raises json.JSONDecodeError at line 247 instead of a meaningful AssertionError, hiding the real diagnostic. The same pattern occurs at line 309 in test_validate_missing_falsification_fails. In contrast, test_validate_no_session_fails (line 252-255) only asserts returncode and never parses stdout, showing the inconsistency. A guard such as checking stdout starts with '{' or wrapping json.loads in a try/except with a descriptive re-raise would make failures diagnosable.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F81",
+      "title": "Return value of _run_aiv_commit discarded in skip-checks evidence tests — command failures produce misleading assertion errors",
+      "location": "tests/unit/test_cli_commit_skip.py:119,132",
+      "class": "correctness/logic",
+      "severity": "low",
+      "evidence": "test_reason_in_class_a (line 116) and test_reason_in_methodology (line 129) call `_run_aiv_commit(staged_repo, [..., \"--dry-run\"])` without capturing or checking the return value. If the command exits non-zero (e.g., because aiv commit rejects the invocation for any reason), the test proceeds to `list(evidence_dir.glob(\"EVIDENCE_*.md\"))` and fails with `AssertionError: Expected 1 evidence file, got 0` — with no indication that the command itself failed. The actual error (returncode != 0, stderr message) is silently discarded. Both tests should assert `result = _run_aiv_commit(...); assert result.returncode == 0, result.stderr` before checking evidence file side effects.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F82",
+      "title": "test_functional_plus_packet_validates omits _load_hook_config patch present in _mock_main, making it sensitive to the actual .aiv.yml on disk",
+      "location": "tests/unit/test_pre_commit_hook.py:157-172",
+      "class": "correctness/logic",
+      "severity": "low",
+      "evidence": "The _mock_main helper (line 108-122) patches _load_hook_config to return default prefixes, ensuring _is_functional works deterministically. test_functional_plus_packet_validates (line 157-172) patches _staged_files, _write_safety_snapshot, _run_git, _validate_packet, and _get_submodule_paths, but does NOT patch _load_hook_config. If the test runner's working directory contains a .aiv.yml with a functional_prefixes list that excludes src/ (e.g., only listing backend/), then _is_functional(\"src/aiv/cli/main.py\") returns False, the commit is treated as docs-only, _validate_packet is never called, and main() returns 0. The test expects 1, so it would fail — but the failure reason (wrong config context) would be invisible. If the custom config happens to include src/, the test passes correctly but for an environment-dependent reason.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F83",
+      "title": "Path traversal via insufficient prefix check in _resolve_packet",
+      "location": "src/aiv/guard/runner.py:191",
+      "class": "path_traversal",
+      "severity": "high",
+      "evidence": "Line 191 checks `file_path.startswith('.github/')` on the raw string extracted from PR body text, but no path normalization is applied before the check. A value such as `.github/../../etc/passwd` passes the startswith guard, then `Path(file_path).read_text()` at line 200 reads the resolved path outside the repository root. The extracted value is attacker-controlled (PR body).",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F84",
+      "title": "SSRF via urlopen on arbitrary packet-supplied URL in _head_check",
+      "location": "src/aiv/lib/validators/links.py:169",
+      "class": "ssrf",
+      "severity": "medium",
+      "evidence": "The static method `_head_check(url)` calls `urlopen(req, timeout=_LINK_CHECK_TIMEOUT)` where `url` is taken directly from claim artifact URLs parsed from a user-supplied verification packet. No allowlist, scheme restriction, or private-IP-range check is applied. When `--audit-links` is passed, this enables requests to localhost, cloud metadata endpoints (169.254.169.254), or internal services.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F85",
+      "title": "SSRF / URL injection via git-remote-derived owner/repo in GitHub API calls",
+      "location": "src/aiv/cli/main.py:683",
+      "class": "ssrf",
+      "severity": "medium",
+      "evidence": "Function `_fetch_latest_ci_url` at line 683 constructs `url = f'https://api.github.com/repos/{owner}/{repo}/actions/runs?...'` where `owner` and `repo` are extracted from the git remote URL via regex at line 640-643. A crafted `.git/config` remote URL can inject path segments or query parameters. The same pattern appears in `_fetch_issue_title` at line 714. Neither function validates that owner/repo are safe GitHub identifiers before interpolating them into the request URL.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F86",
+      "title": "URL injection via unencoded path parameter in get_file_content",
+      "location": "src/aiv/guard/github_api.py:176",
+      "class": "injection",
+      "severity": "medium",
+      "evidence": "Line 176 constructs `url = f'{self.base_url}/repos/{ctx.owner}/{ctx.repo}/contents/{path}?ref={ref}'` without URL-encoding the `path` argument. A caller-supplied path containing `#`, `?`, `%`, or `/..` can alter the request path or query string. `ctx.owner` and `ctx.repo` are also embedded without encoding; in the GitHub Actions context these come from `GITHUB_REPOSITORY` (trusted), but `path` has wider caller surface.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F87",
+      "title": "Pre-commit hook bypass via --no-verify in aiv close command",
+      "location": "src/aiv/cli/main.py:1237",
+      "class": "authz",
+      "severity": "medium",
+      "evidence": "Line 1237 runs `['git', 'commit', '--no-verify', '-m', commit_msg]`, explicitly passing `--no-verify` which skips all configured pre-commit and commit-msg hooks. The AIV protocol installs a pre-commit hook (src/aiv/hooks/pre_commit.py) that enforces packet integrity. The primary user-facing command that commits packets therefore systematically bypasses the enforcement layer the protocol defines.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F88",
+      "title": "Markdown injection via unescaped git-context values in generated evidence files",
+      "location": "src/aiv/cli/main.py:843",
+      "class": "injection",
+      "severity": "low",
+      "evidence": "Line 843 interpolates `owner`, `repo`, and `head_sha` into a GitHub URL embedded in generated markdown: `f'https://github.com/{owner}/{repo}/tree/{head_sha}'`. These values originate from the git remote URL (line 640-643) without sanitization. A repository remote configured with Markdown-special characters (e.g. `][evil` in owner) can break link syntax or embed unexpected markup in the generated verification packet document.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F89",
+      "title": "Arbitrary file read via GITHUB_EVENT_PATH environment variable",
+      "location": "src/aiv/guard/github_api.py:88",
+      "class": "path_traversal",
+      "severity": "info",
+      "evidence": "Line 85-88 reads `event_path = os.environ.get('GITHUB_EVENT_PATH', '')` and then calls `Path(event_path).read_text()` with no restrictions on the path value. In the intended GitHub Actions execution context this variable is controlled by the runner, but in local or CI environments where the variable is attacker-settable, this allows reading arbitrary files accessible to the process.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F90",
+      "title": "LinkValidator makes unfiltered outbound HTTP requests to user-supplied packet URLs",
+      "location": "tests/unit/test_validators.py:427",
+      "class": "SSRF",
+      "severity": "medium",
+      "evidence": "test_audit_links_404_blocks (line 427) mocks 'aiv.lib.validators.links.urlopen' and confirms the production LinkValidator calls urllib's urlopen with URLs extracted directly from user-supplied verification packet content (IntentSection.evidence_link). test_audit_links_deduplicates_urls (line 499) additionally shows that claim artifact URLs are also fetched. No test in the suite validates that internal or cloud-metadata URLs (e.g. http://169.254.169.254/, http://localhost:8080/) are blocked before the request is issued. The only guard is audit_links=False (default), confirmed by test_audit_links_off_skips_network (line 419), meaning callers who enable link auditing expose the host to SSRF.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F91",
+      "title": "SVP verifier identity is self-asserted via CLI argument with no authentication",
+      "location": "tests/integration/test_svp_full_workflow.py:387",
+      "class": "authz",
+      "severity": "high",
+      "evidence": "In test_full_journey_passes_validation (line 317) and test_ownership_records_commit (line 421), the '--verifier alice' CLI argument is stored as both session.verifier_id and ownership_commit.author_github_id. The S011 rule tested in tests/unit/test_svp.py:511 only checks that author_github_id matches session.verifier_id, but both values originate from the same user-supplied '--verifier' string with no cryptographic binding to git commit authorship or GitHub identity. Any actor can trivially satisfy S011 by passing identical self-chosen strings to --verifier across all SVP commands, forging any verifier identity.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F92",
+      "title": "User-controlled --skip-reason text inserted verbatim into structured markdown evidence files",
+      "location": "tests/unit/test_cli_commit_skip.py:116",
+      "class": "injection",
+      "severity": "medium",
+      "evidence": "test_reason_in_class_a (line 116) asserts that the raw --skip-reason CLI string appears verbatim in the generated markdown evidence file: 'assert reason in content'. test_reason_in_methodology (line 129) similarly asserts the string appears in the Methodology section. Neither test nor any other test in the file validates that reason values containing markdown structural characters (newlines, '---', '## Heading', '| table |', backtick fences) are escaped or sanitized before insertion, permitting content injection into the evidence file's structured markdown.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F93",
+      "title": "Auto-fix mode embeds local file path directly into GitHub URL without URL-encoding",
+      "location": "tests/unit/test_auditor.py:370",
+      "class": "path-traversal",
+      "severity": "medium",
+      "evidence": "test_fix_class_e_local_ref (line 370) replaces a Class E link with the local reference 'AUDIT_REPORT.md — Finding L01', then asserts that after auditor.audit(tmp_path, fix=True) the file contains both 'https://github.com/' and the raw string 'AUDIT_REPORT.md'. This confirms the auto-fix code constructs a GitHub URL by concatenating the local filename without URL-encoding. No test validates behaviour for filenames containing '..', '%', '#', or other URL-special characters. A packet with a reference like '../../.env' would embed that string in the generated URL without sanitization.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F94",
+      "title": "SVP session file keyed on PR number alone with no per-user isolation",
+      "location": "tests/integration/test_svp_full_workflow.py:63",
+      "class": "authz",
+      "severity": "low",
+      "evidence": "_session_path (line 63) constructs the session path as '.svp/session-pr{pr}.json' keyed solely on the integer PR number. No user identity, workspace hash, or access token is incorporated. test_probe_resume_merges_scenarios (line 522) confirms sessions are openly mutable by any caller: a second 'svp probe' invocation with a different verifier ID successfully merges scenarios into the existing session file. Two actors targeting the same PR number share one session, allowing one to overwrite or forge the other's phase records.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F95",
+      "title": "Integration test subprocess unconditionally inherits full os.environ including CI secrets",
+      "location": "tests/integration/test_svp_full_workflow.py:51",
+      "class": "secrets",
+      "severity": "low",
+      "evidence": "_run (line 43) builds the child-process environment as '{**__import__(\"os\").environ, \"PYTHONPATH\": ..., \"PYTHONUTF8\": \"1\"}', spreading all host environment variables into the subprocess. The unusual inline __import__(\"os\") pattern (rather than a top-level import) suggests an oversight. In CI pipelines where GITHUB_TOKEN, PYPI_TOKEN, or AWS_SECRET_ACCESS_KEY are injected as env vars, these secrets are propagated to every aiv subprocess invoked during the integration test suite, expanding the blast radius if the subprocess logs or forwards environment variables.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F96",
+      "title": "Bash hook incompatible with aiv commit: EVIDENCE_*.md not recognized as packet",
+      "location": ".husky/pre-commit:61 vs src/aiv/cli/main.py:1879 vs src/aiv/hooks/pre_commit.py:342",
+      "class": "doc/code drift",
+      "severity": "critical",
+      "evidence": "`.husky/pre-commit:61` PACKET_PATTERN is `\"^\\.github/(aiv-packets/)?VERIFICATION_PACKET_.*\\.md$\"` — matches only VERIFICATION_PACKET_ prefix. `aiv commit` (main.py:1879) stages two files: the functional file and `EVIDENCE_*.md` (evidence_dir / evidence_filename). Bash hook Rule 2 (`count==2 && HAS_PACKET && IS_FUNCTIONAL`) requires HAS_PACKET to be non-empty, but EVIDENCE_*.md does not match the PACKET_PATTERN, so HAS_PACKET is empty. Bash Rule 5 (`IS_FUNCTIONAL && no HAS_PACKET`) then fires, blocking the commit. By contrast the Python hook at pre_commit.py:342 explicitly allows `len(evidence) == 1` as an alternative to a packet: `if count == 2 and (len(packets) == 1 or len(evidence) == 1) and len(functional) == 1`. The bash hook has never been updated to recognise the Layer 1 evidence-file convention, making it fully incompatible with the primary `aiv commit` workflow.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F97",
+      "title": "Bash hook PACKET_PATTERN excludes PACKET_*.md files generated by aiv close",
+      "location": ".husky/pre-commit:61 vs src/aiv/cli/main.py:1132 vs src/aiv/hooks/pre_commit.py:49",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "`aiv close` at main.py:1132 sets `packet_filename = f\"PACKET_{packet_name}.md\"` — the prefix is `PACKET_`, not `VERIFICATION_PACKET_`. The bash hook pattern at .husky/pre-commit:61 only matches `VERIFICATION_PACKET_*`. So if a developer commits the packet generated by `aiv close` while Husky is the active hook, the commit is blocked with a spurious 'Rule 5: code without evidence' rejection. The Python hook at pre_commit.py:49 lists `\".github/aiv-packets/PACKET_,\"` as a valid prefix and handles it correctly. The bash hook was not updated when the two-layer packet naming convention changed to `PACKET_<name>.md`.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F98",
+      "title": "Bash hook lacks Two-Layer Architecture active-change bypass",
+      "location": ".husky/pre-commit vs src/aiv/hooks/pre_commit.py:381",
+      "class": "doc/code drift",
+      "severity": "high",
+      "evidence": "Python pre-commit hook at pre_commit.py:381-382 has `if _has_active_change(): return 0` which allows any commit (including multi-file) when `aiv begin` has been called and a change context is open. The bash hook (.husky/pre-commit) has no equivalent check — it would block any commit of >2 files or a functional file without a packet regardless of whether `aiv begin` is active. The Two-Layer Architecture section (comment at pre_commit.py:321-325) explicitly describes this as an intentional design: `\"if an active change context exists, allow the commit\"`. The bash hook does not implement this, making it semantically incompatible with the `aiv begin`/`aiv commit`/`aiv close` recommended workflow.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F99",
+      "title": "aiv close uses git commit --no-verify undocumented in command docstring",
+      "location": "src/aiv/cli/main.py:1237 vs src/aiv/cli/main.py:969-979",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "The `close` command docstring at main.py:969-979 says it 'generates PACKET_<name>.md in .github/aiv-packets/, validates it, and commits it'. At main.py:1237 the actual commit call is `[\"git\", \"commit\", \"--no-verify\", \"-m\", commit_msg]` — it uses --no-verify, bypassing the pre-commit hook. The docstring never mentions this bypass. The provisional intent states compliance is 'non-bypassable'; the core close command contradicts this by design. The Python pre-commit hook would in fact allow this commit (it is packet-only; `all_aiv` check at pre_commit.py:325 would pass), so --no-verify is also unnecessary. The omission from the docstring causes the tool to present itself as using enforcement while silently bypassing it.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F100",
+      "title": "ValidationPipeline class docstring lists 7 stages but code implements 8",
+      "location": "src/aiv/lib/validators/pipeline.py:49-56 vs pipeline.py:131 vs src/aiv/cli/main.py:324",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "The `ValidationPipeline` class docstring at pipeline.py:49-56 enumerates: '1. Parse 2. Structure 3. Links 4. Evidence 5. Zero-Touch 6. Anti-Cheat 7. Cross-Reference' — seven stages. The `validate()` method body has inline stage comments including 'Stage 5: Risk-Tier Evidence Requirements' at pipeline.py:131 (`tier_findings = self._check_tier_requirements(packet)`), renumbering Zero-Touch to Stage 6 through Anti-Cheat Stage 7 and Cross-Reference Stage 8. The quickstart output at main.py:324 says 'Validate a verification packet (8-stage pipeline)' — matching the code but not the class docstring. The missing stage 5 (Risk-Tier Evidence Requirements) is where E019/E020 findings originate; users consulting only the class docstring would not expect it.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F101",
+      "title": "Pre-push hook claims CI layer-3 catches no-verify commits on PRs but protocol-audit only runs on push",
+      "location": "src/aiv/hooks/pre_push.py:15-16 vs .github/workflows/ci.yml:67",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "pre_push.py module docstring at lines 15-16: 'Defence-in-depth: 1. pre-commit hook, 2. pre-push hook, 3. CI protocol-audit — catches --no-verify push (server-side)'. The protocol-audit job in ci.yml is at line 64-83 and at line 67 has the guard `if: github.event_name == 'push'`. This means the protocol-audit job runs only on direct pushes to main, not on `pull_request` events. A developer who opens a PR whose commits used `--no-verify` and who also used `git push --no-verify` bypasses hooks 1 and 2, and the CI layer-3 (`aiv audit --commits 20`) does not run on the PR at all — it only runs after merge. The docstring's claim that 'CI catches even that' overstates the protection for the PR workflow.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F102",
+      "title": ".cursorrules workflow includes redundant git add step that aiv commit handles internally",
+      "location": ".cursorrules:9 vs src/aiv/cli/main.py:1879",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "`.cursorrules:9` lists Step 2 as `git add <file> — Stage the file`, instructing the user to manually stage before `aiv commit`. `aiv commit` at main.py:1879 calls `subprocess.run([\"git\", \"add\", str(file), str(packet_path)], check=True, timeout=10)` internally, staging both the functional file and the generated evidence file itself. If a user follows .cursorrules and pre-stages the file, `aiv commit` will re-stage it (no-op) but also discovers the unstaged diff via `git diff HEAD` at line 1490 for the early-check step. Evidence collection via `collect_class_b` at line 1599 runs before `git add`, so the explicit pre-staging step in .cursorrules would change what diff is available. The discrepancy means the documented workflow and the actual execution model differ in the staging sequence.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F103",
+      "title": "R0 with --skip-checks produces a Class A placeholder header that satisfies the pipeline Class A requirement",
+      "location": "src/aiv/lib/validators/pipeline.py:182 vs src/aiv/cli/main.py:1465-1649",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "pipeline.py:182 defines `RiskTier.R0: {EvidenceClass.EXECUTION, EvidenceClass.REFERENTIAL}` — R0 requires Class A (Execution) evidence. main.py:1465 restricts `--skip-checks` to R0 only. When skip_checks is True, main.py:1646-1649 emits: `### Class A (Execution Evidence)\\n\\n- Local checks skipped (--skip-checks).\\n- **Skip reason:** {skip_reason}`. The parser detects the `### Class A` heading and reports Class A as present; the `_check_tier_requirements` validator at pipeline.py:229 then sees Class A present and does not emit E019. The quickstart at main.py:308-310 describes Class A as collecting 'Per-symbol test coverage (AST analysis)', implying real execution evidence; for R0+skip-checks a placeholder header substitutes with no actual execution artifact, silently satisfying the validator.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F104",
+      "title": "Phase 4 docstring claims JSON injection but code runs CLI command",
+      "location": "tests/integration/test_svp_full_workflow.py:321",
+      "class": "doc_code_drift",
+      "severity": "high",
+      "evidence": "Docstring at lines 321-324 states: 'Phase 4 (ownership commit) is injected directly into the session JSON because it requires actual git operations that we mock here.' The actual code at lines 380-401 runs `self._run(\"ownership\", \"42\", ...)` — the standard CLI path — and the inline comment even labels it '# Phase 4: Ownership via CLI'. The docstring was never updated after the implementation changed from JSON injection to CLI invocation.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F105",
+      "title": "Module-level docstring says Phase 4 is 'manual — tested via model injection' but every Phase 4 test uses CLI",
+      "location": "tests/integration/test_svp_full_workflow.py:10",
+      "class": "doc_code_drift",
+      "severity": "medium",
+      "evidence": "Module docstring at line 10 reads 'Phase 4: Ownership Lock (manual — tested via model injection)'. All three tests that exercise Phase 4 — test_full_journey_passes_validation (lines 380-401), test_ownership_records_commit (lines 421-467), and the probe-then-ownership flows — invoke `self._run(\"ownership\", ...)` which is the CLI, not JSON injection. No test injects ownership directly into session JSON.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F106",
+      "title": "Test name 'test_template_is_not_packet' directly contradicts its own assertion",
+      "location": "tests/unit/test_pre_commit_hook.py:36",
+      "class": "doc_code_drift",
+      "severity": "high",
+      "evidence": "The test at lines 36-37 is named `test_template_is_not_packet` but its body asserts `_is_packet(\".github/aiv-packets/VERIFICATION_PACKET_TEMPLATE.md\") is True`. The assertion and the test name are logical opposites. An inline comment attempts to explain ('Templates match the pattern — they ARE packets structurally') but this makes the test name an outright misnomer rather than a nuanced distinction. Compare test_auditor.py:102-107 where `PacketAuditor.audit()` explicitly excludes TEMPLATE files (`packets_scanned == 1` with template present), creating a cross-subsystem inconsistency: the hook treats templates as valid packets while the auditor excludes them.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F107",
+      "title": "test_cli_init docstring claims hook 'catches' bypass but assertion only checks string presence",
+      "location": "tests/unit/test_cli_init.py:139",
+      "class": "doc_code_drift",
+      "severity": "medium",
+      "evidence": "The test `test_pre_push_hook_content_mentions_no_verify` at line 139 carries the docstring 'Claim 2: Pre-push hook catches commits that bypassed pre-commit via --no-verify.' The actual assertion at line 149 is `assert \"--no-verify\" in content, \"Pre-push hook shim should document --no-verify bypass\"`. The assertion message itself reveals the drift: it says 'document', not 'catch'. Verifying that the string '--no-verify' appears in the hook file content is a documentation check, not a behavioral enforcement test. The provisional intent requires 'non-bypassable' compliance; this test does not validate that property.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F108",
+      "title": "test_guard empty-body test comment says 'fail' but assertion accepts non-blocking warn",
+      "location": "tests/unit/test_guard.py:401",
+      "class": "doc_code_drift",
+      "severity": "medium",
+      "evidence": "The test `test_empty_body_fails` at lines 401-406 has the comment '# Empty body should fail (no packet header found)' which implies blocking (BLOCK) behavior. The assertion is `assert result.block_count >= 1 or result.warn_count >= 1`. The `or` means the test passes if only a WARNING is produced, which would not block a PR merge. Under the provisional intent, aiv-guard is the CI enforcement layer making compliance 'non-bypassable'; a warning-only outcome would allow the PR through. The docstring says 'fail' but the code permits a warn-only outcome.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F109",
+      "title": "test_r2_optional_d_and_f_info docstring says 'D and F' but assertion only requires >= 1 INFO finding",
+      "location": "tests/unit/test_validators.py:366",
+      "class": "doc_code_drift",
+      "severity": "medium",
+      "evidence": "The test at lines 366-380 is named `test_r2_optional_d_and_f_info` with docstring 'R2 should produce INFO for missing optional D and F.' The input packet for R2 is missing both Class D and Class F. The assertion at line 379 is `assert len(info) >= 1  # At least D or F recommended`. The docstring says both D AND F should produce INFO, but `>= 1` is satisfied if only one of them fires. If the implementation only emits INFO for D (not F), the test passes despite the docstring's promise about F. The comment `# At least D or F recommended` acknowledges the weaker check, making the test name and docstring overstate coverage.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F110",
+      "title": "test_fix_commit_pending claims to test auto-fix but only verifies no crash",
+      "location": "tests/unit/test_auditor.py:359",
+      "class": "doc_code_drift",
+      "severity": "medium",
+      "evidence": "The class `TestAutoFix` at line 356 is described as 'Test the --fix mode auto-remediation.' The test `test_fix_commit_pending` at lines 359-368 calls `auditor.audit(tmp_path, fix=True)` on a packet with `pending` as the commit SHA, then asserts only `result.packets_scanned == 1`. The comment at lines 365-367 admits 'In a non-git context, commit SHA won't be found, so pending stays / Just verify the auditor didn't crash'. The test is labelled as an auto-fix test but validates only non-crashing, not that any remediation occurred. The 'fix' behavior is entirely untested.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F111",
+      "title": "Auto-fix test for CLASS_E_NO_URL asserts URL conversion but not SHA-pinning; may legitimize mutable /blob/main/ links",
+      "location": "tests/unit/test_auditor.py:370",
+      "class": "intent_mismatch",
+      "severity": "medium",
+      "evidence": "The test `test_fix_class_e_local_ref` at lines 370-381 asserts `assert \"https://github.com/\" in fixed_body` and `assert \"AUDIT_REPORT.md\" in fixed_body`. The inline comment says 'even without git, falls back to \"main\"'. A URL containing `/blob/main/` is a MUTABLE branch reference — exactly the pattern detected by `CLASS_E_MUTABLE` (tested at test_auditor.py:145-155 as an ERROR). The auto-fix is tested as passing when it converts a plain-text reference to a `/blob/main/` URL, which would itself trigger a different auditor ERROR. The test does not assert SHA-pinning, contradicting the auditor's own invariant that Class E links must be immutable.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F112",
+      "title": "test_r1_adds_class_e name implies R1 uniquely adds Class E, but R0 already includes it",
+      "location": "tests/unit/test_coverage.py:43",
+      "class": "doc_code_drift",
+      "severity": "low",
+      "evidence": "The test at lines 43-54 is named `test_r1_adds_class_e`. However, `test_r0_has_class_b_and_a` at lines 36-42 also asserts `assert \"### Class E\" in result` for R0 (with comment '# structurally required by parser'). The assertions for R1 are identical to R0 with respect to Class E — both include B, A, E and exclude C. The name 'adds_class_e' falsely implies R1 is the tier where Class E first appears, obscuring that both R0 and R1 generate the same Class E section in their evidence templates.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F113",
+      "title": "Temp files leaked in exception paths inside _validate_packet",
+      "location": "src/aiv/hooks/pre_commit.py:155-214",
+      "class": "resource-leak",
+      "severity": "high",
+      "evidence": "NamedTemporaryFile is created with delete=False at line 155 (tmp_path). A separate mkdtemp audit_dir is created at line 183. The outer except Exception at line 212 catches all subprocess exceptions but does NOT call Path(tmp_path).unlink() or shutil.rmtree(audit_dir) before returning True, leaving both temp resources on disk permanently.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F114",
+      "title": "_run_git in evidence_collector.py silently omits try/except despite 'never raises' docstring",
+      "location": "src/aiv/lib/evidence_collector.py:249-255",
+      "class": "error-handling",
+      "severity": "high",
+      "evidence": "The docstring at line 249 states 'Returns empty string on failure or timeout (never raises).' but the implementation at line 254 calls subprocess.run(..., timeout=30) with no try/except. Both subprocess.TimeoutExpired and FileNotFoundError (git not on PATH) will propagate uncaught to every call site that relies on the 'never raises' contract.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F115",
+      "title": "URLError not caught in GitHubAPI._request and _request_bytes",
+      "location": "src/aiv/guard/github_api.py:51-76",
+      "class": "error-handling",
+      "severity": "high",
+      "evidence": "_request (line 51) and _request_bytes (line 68) catch only HTTPError. urllib.request.urlopen raises URLError (the parent class) for DNS failures, connection refused, and SSL errors. These propagate uncaught through list_pr_files, get_workflow_run, and list_run_artifacts callers instead of being wrapped as GitHubAPIError, breaking the guard's error abstraction.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F116",
+      "title": "json.loads on GITHUB_EVENT_PATH is unguarded in context_from_env",
+      "location": "src/aiv/guard/github_api.py:88",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "Line 88: event = json.loads(Path(event_path).read_text(encoding='utf-8')). If GITHUB_EVENT_PATH points to a malformed JSON file the guard crashes with an unhandled json.JSONDecodeError before any validation begins. No try/except wraps this call, and there is no fallback default.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F117",
+      "title": "subprocess.run with check=True called without try/except in commit_cmd and close",
+      "location": "src/aiv/cli/main.py:1879,1233",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "Line 1879 in commit_cmd: subprocess.run(['git', 'add', ...], check=True, timeout=10). Line 1233 in close: subprocess.run(['git', 'add', str(packet_path)], check=True, timeout=10). CalledProcessError, TimeoutExpired, and FileNotFoundError all propagate as raw exceptions instead of user-friendly Typer Exit messages, inconsistent with the rest of the CLI which uses console.print + raise typer.Exit(1).",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F118",
+      "title": "dir() used as variable-existence sentinel — fragile conditional error path",
+      "location": "src/aiv/cli/main.py:1664,1721",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "Line 1664: 'if lang_driver is not None and not skip_checks and \"changed_symbols\" in dir()'. Line 1721: 'class_c_data if tier_upper in (\"R2\", \"R3\") and \"class_c_data\" in dir() else None'. Using dir() to guard uninitialized local variables is an antipattern; if the surrounding if-branches are refactored, the string literals will silently fail to match, causing NameError at runtime instead of a controlled fallback.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F119",
+      "title": "EvidenceClassResult.valid always set to present — validation field is dead",
+      "location": "src/aiv/guard/runner.py:381",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Line 381: valid=present. EvidenceClassResult has a separate 'valid' field implying content validation, but _build_evidence_class_results unconditionally sets valid equal to present. No code path ever sets valid=False for a present item; the field carries no information beyond 'present' and is never consulted separately. The field is effectively dead.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F120",
+      "title": "Standard library modules imported inside functions rather than at module level",
+      "location": "src/aiv/guard/github_api.py:188,193",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "get_file_content at line 188 does 'import base64' and search_code at line 193 does 'import urllib.parse' inside the function body. Both are stdlib modules with no import cost; the deferred placement obscures dependencies and is inconsistent with the module-level import of json, os, and urllib.error. No conditional need exists for deferral.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F121",
+      "title": "Redundant import subprocess as _sp shadows already-imported subprocess",
+      "location": "src/aiv/cli/main.py:1489",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "commit_cmd imports 'import subprocess' at line 1414 within the same function scope. Eight lines later at line 1489 it re-imports as 'import subprocess as _sp' solely for _diff_check and _staged_check. The alias is never referenced after line 1513. The original 'subprocess' name is available throughout the function and could be used directly, making the aliased import dead weight.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F122",
+      "title": "_LOCAL_FILE_PATHS maps only two project-specific filenames — unusable in user repos",
+      "location": "src/aiv/lib/auditor.py:128-131",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "_LOCAL_FILE_PATHS = {'AUDIT_REPORT.md': 'AUDIT_REPORT.md', 'SPECIFICATION.md': 'SPECIFICATION.md'}. _can_pin_link and _pin_local_reference use this dict to auto-fix CLASS_E_NO_URL findings by building SHA-pinned GitHub URLs. In any repo that does not have files named exactly AUDIT_REPORT.md or SPECIFICATION.md, the auto_fixable flag is always False and the auto-fix logic in _apply_fixes is dead for all practical users.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F123",
+      "title": "O(n²) nested ast.walk in resolve_changed_symbols — no bound on large files",
+      "location": "src/aiv/lib/evidence_collector.py:620-626",
+      "class": "resource-handling",
+      "severity": "low",
+      "evidence": "For each FunctionDef/AsyncFunctionDef/ClassDef node found in the outer ast.walk (line 616), a full second ast.walk(tree) is performed at line 623 to identify the parent ClassDef. For a file with N symbol nodes this is O(N²) AST traversals. No size limit is enforced on file_path before parsing, so a large generated file could cause measurable latency in the pre-commit critical path.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F124",
+      "title": "Discarded read_text() return value — auto-fix never verified",
+      "location": "tests/unit/test_auditor.py:365",
+      "class": "dead-code",
+      "severity": "medium",
+      "evidence": "Line 365: `p.read_text(encoding=\"utf-8\")` is called but its return value is never assigned or asserted. The surrounding comment says 'Just verify the auditor didn't crash', but the only real assertion is `result.packets_scanned == 1` computed before the fix attempt. Whether the pending SHA was actually replaced in the file is never checked, so the auto-fix path is exercised but not validated.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F125",
+      "title": "Discarded subprocess result silences command failures in skip-checks tests",
+      "location": "tests/unit/test_cli_commit_skip.py:119",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "In `test_reason_in_class_a` (line 119) and `test_reason_in_methodology` (line 131), `_run_aiv_commit(...)` is called but the `CompletedProcess` return value is discarded. If `aiv commit` exits non-zero the test does not detect failure immediately; it only surfaces later as 'Expected 1 evidence file, got 0', masking the real cause. Both tests verify skip-reason stamping — a gate that should first confirm the command succeeded.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F126",
+      "title": "Inline __import__(\"os\") hides os dependency from static analysis",
+      "location": "tests/integration/test_svp_full_workflow.py:51",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Line 51: `env={**__import__(\"os\").environ, \"PYTHONPATH\": str(PROJECT_ROOT), \"PYTHONUTF8\": \"1\"}` uses a dynamic import inline because `os` is absent from the module-level imports (lines 19-27 list only json, subprocess, sys, Path, pytest). The pattern is functional but bypasses static analysis, making the `os` dependency invisible to linters and tooling.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F127",
+      "title": "subprocess and sys imported inside test methods, not at module level",
+      "location": "tests/unit/test_auditor.py:419",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Lines 419-421 (`test_audit_cli_runs`) and 435-436 (`test_audit_cli_exits_1_on_errors`) each do `import subprocess` and `import sys` inside the test body. The module-level imports (lines 8-11) include only `Path`, `patch`, `AuditSeverity`, and `PacketAuditor`. Local imports hide the dependency from static analysis and run the import machinery on every test invocation.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F128",
+      "title": "Rating-engine import placed mid-file after all test classes",
+      "location": "tests/unit/test_svp.py:676",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Line 676: `from aiv.svp.lib.rating import calculate_rating, score_session` appears after the closing of all preceding test classes (TestEnums through TestSessionType), far from the module-level import block (lines 9-38). This breaks PEP 8 E402, surprises readers scanning imports, and means static analysis tools that scan only the top of the file will miss this dependency.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F129",
+      "title": "Module-level try/except catches only ImportError; non-ImportError from TreeSitterDriver() propagates uncaught",
+      "location": "tests/unit/test_language_drivers.py:90",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "Lines 90-95: `try: from ... import TreeSitterDriver; _TREESITTER_AVAILABLE = TreeSitterDriver().available; except ImportError: _TREESITTER_AVAILABLE = False`. If the tree-sitter package is importable but `TreeSitterDriver().available` raises `AttributeError`, `RuntimeError`, or any other non-ImportError exception, the exception escapes the handler and prevents the entire test module from loading. All 31 tests in the file would fail with a confusing collection error rather than a skip.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F130",
+      "title": "test_functional_plus_packet_validates omits _load_hook_config patch, unlike _mock_main",
+      "location": "tests/unit/test_pre_commit_hook.py:157",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "Lines 157-173: The test patches `_staged_files`, `_write_safety_snapshot`, `_run_git`, `_validate_packet`, and `_get_submodule_paths` — five of the six mocks applied by `_mock_main` — but omits `_load_hook_config`. The function reads `.aiv.yml` from the process working directory. If a `.aiv.yml` exists in the test runner's cwd (e.g., the repo root), the hook config differs from the defaults assumed by all other rule-engine tests, making this test environment-dependent.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F131",
+      "title": "subprocess.run return values discarded in multiple aiv-init tests",
+      "location": "tests/unit/test_cli_init.py:57",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "Lines 57-62 (`test_creates_packets_dir`), 65-69 (`test_creates_evidence_dir`), 78-85 (`test_installs_pre_commit_hook`), and several others call `subprocess.run([sys.executable, \"-m\", \"aiv\", \"init\", ...])` without storing or checking the return value. If `aiv init` fails, the test does not immediately surface the exit code; it fails later on the directory/hook existence assertion with a message that does not show why init failed.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F132",
+      "title": "Operator-precedence bug causes +++ file-header lines to advance line counter",
+      "location": "src/aiv/lib/validators/anti_cheat.py:132-142",
+      "class": "logic-bug/operator-precedence",
+      "severity": "low",
+      "evidence": "The counter guard is `line.startswith('+') and not line.startswith('+++') or not line.startswith('-') and not line.startswith('\\\\') and not line.startswith('diff ')`. Python evaluates `and` before `or`, so this parses as `(clause1) or (clause2)`. For a `+++ b/file.py` header: clause1 = `True and False` = False; clause2 = `True and True and True` = True (does not start with `-`, `\\`, or `diff `); result = True, so `current_line` increments. The `+++` new-file header is not caught by the earlier `continue` blocks (only `diff --git` and `@@` lines have `continue`). Every `+++` line in the diff adds 1 to the running line number, producing off-by-one errors for all subsequent finding locations in that file.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F133",
+      "title": "ValidationResult.is_valid inconsistent with status in strict mode",
+      "location": "src/aiv/lib/models.py:306-309",
+      "class": "logic-inconsistency",
+      "severity": "medium",
+      "evidence": "`is_valid` is defined as `len(self.blocking_errors) == 0` (line 308-309), where `blocking_errors` filters `self.errors` by `Severity.BLOCK`. In the pipeline (pipeline.py:164-169), when `strict_mode=True`, `has_failures = len(all_errors) > 0 or len(all_warnings) > 0`, so warnings alone cause `status = FAIL`. Warnings are placed in `self.warnings`, not `self.errors`. Therefore a packet with only WARN-severity findings has `status == FAIL` but `is_valid == True`. Any library consumer that uses `result.is_valid` instead of `result.status` will incorrectly treat the packet as valid.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F134",
+      "title": "check_justification: any Class F claim with >20 chars justifies ALL anti-cheat findings",
+      "location": "src/aiv/lib/validators/anti_cheat.py:203-209",
+      "class": "logic-bug/security-bypass",
+      "severity": "high",
+      "evidence": "In `check_justification` the outer loop iterates over each `finding`. For each finding, the inner loop scans `packet_claims` for any Class F claim whose `justification or description` exceeds 20 chars. On the first such claim, `has_justification = True` is set and the inner loop `break`s, marking the current finding as justified. This means a single generic Class F claim (e.g., `description='All tests preserved, regression suite passing'`, 47 chars) satisfies EVERY anti-cheat finding regardless of the specific file or type. A developer can delete assertions in test_foo.py, add @pytest.mark.skip in test_bar.py, and escape all findings by including one non-specific Class F claim. The justification is not matched to specific findings.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F135",
+      "title": "_inspect_class_a_run does not verify CI run succeeded (no conclusion check)",
+      "location": "src/aiv/guard/runner.py:336-365",
+      "class": "missing-check/logic-gap",
+      "severity": "high",
+      "evidence": "After fetching `run_data` via `self.api.get_workflow_run(self.ctx, run_id)`, the guard checks only `run_data.get('head_sha')` for SHA match and then looks for an `aiv-evidence` artifact (lines 343-365). It never checks `run_data.get('conclusion')` (expected `'success'`) or `run_data.get('status')` (expected `'completed'`). A GitHub Actions workflow run that is still in-progress, cancelled, or failed (with a pre-failure artifact upload, e.g., if the evidence-collection step runs before a test failure step) will satisfy lines 364-365 `self.result.upsert_rule_result('A-002', 'PASS')` / `'A-005'`. A failed CI run can therefore provide passing Class A evidence, violating the core guarantee that execution evidence proves tests passed.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F136",
+      "title": "_validate_trace early returns drop validation errors for subsequent traces",
+      "location": "src/aiv/svp/lib/validators/session.py:156-157,183-185",
+      "class": "logic-bug/incomplete-validation",
+      "severity": "medium",
+      "evidence": "In `_validate_trace`, the loop `for trace in session.traces` calls `return False` immediately after appending the first S006 error (line 157) or S015 error (line 185). If `session.traces` has N elements and the first has a missing `edge_case_tested`, only that one S006 error is collected; traces 2..N are never checked. Similarly for S015. A session with 3 traces all violating S006 would report exactly 1 error instead of 3. The `SVPValidationResult` returned by `validate_session` thus under-reports violations, potentially misleading the caller about the extent of non-compliance.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F137",
+      "title": "_check_evidence omits TODO remnants, classified_by, blast_radius, and claims-TODO checks present in _check_packet",
+      "location": "src/aiv/lib/auditor.py:434-578",
+      "class": "logic-gap/missing-check",
+      "severity": "medium",
+      "evidence": "`_check_packet` (called for Layer 2 packets) includes: TODO remnants scan across evidence sections (lines 329-363), `classified_by: 'TODO'` detection (line 366-375), `blast_radius: TODO` detection (lines 377-387), numbered claims still TODO (lines 389-402). `_check_evidence` (called for Layer 1 evidence files from `.github/aiv-evidence/`) includes none of these four checks (lines 434-578). An evidence file with `classified_by: 'TODO'` or unresolved TODO placeholders inside evidence sections passes the auditor without any finding. The file format and fields are structurally identical, so the omission is an oversight.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F138",
+      "title": "bugs_caught metric conflates confirmed-bug probe events with falsification-scenario events",
+      "location": "src/aiv/svp/lib/rating.py:147",
+      "class": "logic-bug/metric-error",
+      "severity": "low",
+      "evidence": "`rating.bugs_caught = len([e for e in all_events if e.event_type.startswith('bug_caught')])`. In `score_session`, both confirmed probe findings (`finding.is_confirmed_bug=True`, line 46-55) AND falsified falsification scenarios (line 62-74) emit `RatingEvent` with `event_type='bug_caught_medium'`. Both match `.startswith('bug_caught')`. A verifier with 0 confirmed bugs but 5 falsified scenarios would show `bugs_caught=5`, inflating the metric and the associated `VerifierTier` calculation.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F139",
+      "title": "artifact_raw.startswith('http') check bypasses URL extraction for multi-line or padded artifact text",
+      "location": "src/aiv/lib/parser.py:584-586",
+      "class": "logic-bug/url-extraction",
+      "severity": "low",
+      "evidence": "In `_enrich_claims_with_evidence`, line 584: `url = self._extract_url(artifact_raw) if not artifact_raw.startswith('http') else artifact_raw`. If `artifact_raw` starts with `http` but contains additional content (e.g., the regex extraction from `content[ref_pos:ref_pos+end_offset]` can include surrounding markdown text that starts with a URL), the entire multi-line string is passed directly to `ArtifactLink.from_url(url)` without URL normalization. Pydantic's `HttpUrl` validator then raises an exception caught at line 589 (`except Exception: artifact = artifact_raw`), leaving the claim with a raw string artifact that is never immutability-checked. `_extract_url` would have correctly extracted just the URL.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F140",
+      "title": "validate_canonical returns on first missing required evidence class, suppressing subsequent missing-class errors",
+      "location": "src/aiv/guard/canonical.py:231-235",
+      "class": "logic-bug/incomplete-error-reporting",
+      "severity": "low",
+      "evidence": "Lines 231-235: `for cls_letter in required: if not any(e.get('class') == cls_letter for e in evidence_items): result.add_block('CT-002', ...); return False`. The `return False` after the first missing class exits the entire `validate_canonical` function. For an R3 packet missing classes C, D, and F, only the first alphabetically missing class is reported. The developer must fix and re-run to discover subsequent missing classes. The block is correctly raised, but the function gives incomplete diagnostic information.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F141",
+      "title": "Logical operator error: 'or' instead of 'and' in unlinked-evidence assertion",
+      "location": "tests/unit/test_validators.py:608-610",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "The assertion `assert artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]` uses `or`, so the test only fails when BOTH claim-2 AND claim-3 duplicate the artifact. If claim-3 duplicates but claim-2 does not (or vice versa), the assertion passes — the defect being tested slips through. The surrounding comment at line 606-607 states 'Claims 2 and 3 should NOT have consumed the same artifact', which requires BOTH to differ from claim-1 and therefore demands `and`. The operator should be `and` to enforce `artifacts[1] != artifacts[0] and artifacts[2] != artifacts[0]`.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F142",
+      "title": "VerifierRating initial tier contradicts from_elo boundary",
+      "location": "tests/unit/test_svp.py:155,389-390",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "At line 155 `test_verifier_tier_from_elo` asserts `VerifierTier.from_elo(500) == VerifierTier.COMPETENT`, establishing that elo=500 falls in the COMPETENT tier. At lines 389-390 `test_initial_rating` asserts that a freshly constructed `VerifierRating(verifier_id='user1')` has `elo_rating == 500` AND `tier == VerifierTier.NOVICE`. These two assertions are contradictory: `from_elo(500)` returns COMPETENT, yet the object holding elo=500 is initialised as NOVICE. Either the initial elo should be <500 (in the NOVICE range), the COMPETENT boundary should be >500, or the constructor should derive tier via `from_elo`. As-is, calling `update_tier()` on a freshly created rating would immediately promote it to COMPETENT without any activity, which contradicts the intent that new verifiers are NOVICE.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F143",
+      "title": "Docstring contradicts assertion: 'main' described as 'not mutable' but asserted as mutable",
+      "location": "tests/unit/test_models.py:298-304",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "In `TestArtifactLinkConfig.test_default_branch_not_mutable_with_custom_set`, the docstring reads \"'main' should NOT be mutable if excluded from custom set\", implying `is_immutable` should be `True`. The assertion on line 304 is `assert link.is_immutable is False`, which states it IS mutable. The inline comment at that line then says 'still non-SHA, so still mutable', confirming the assertion intent. The docstring directly inverts the expected outcome: a reader following the docstring would expect `assert link.is_immutable is True`. This misleads maintainers about what the test verifies and could cause an incorrect inversion of the assertion during refactoring.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F144",
+      "title": "test_valid_markdown_packet asserts only a mode flag, not the validation outcome",
+      "location": "tests/unit/test_guard.py:408-425",
+      "class": "correctness/logic",
+      "severity": "low",
+      "evidence": "The test named `test_valid_markdown_packet` builds a well-formed markdown AIV packet body and runs the guard. The sole assertion at line 424-425 is `assert result.canonical_enabled is False`, which only confirms that canonical JSON mode is disabled — it says nothing about whether the markdown packet actually passes validation. The test name implies the packet should be accepted, but the result's `block_count`, `warn_count`, and `overall_result` are never checked. A guard regression that blocks all markdown packets would leave this test green.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F145",
+      "title": "_make_git_log_output helper may not match actual git log format",
+      "location": "tests/unit/test_auditor.py:514-533",
+      "class": "correctness/logic",
+      "severity": "info",
+      "evidence": "The helper at lines 514-533 produces output in the format `<sha>\\n<file1>\\n<file2>\\n\\n...` (SHA immediately followed by files, blank line between commits). The real `git log --format=%H --name-only` output inserts a blank line between the SHA line and the file list: `<sha>\\n\\n<file1>\\n<file2>\\n\\n`. If `audit_commits` in the production code parses the actual git format (with blank line after SHA), the mock data in these tests does not reproduce it faithfully. The audit_commits tests would still 'pass' because mock_run replaces subprocess.run entirely, but the parser codepath exercised by the mock may differ from the one hit with real git output, leaving actual format-parsing bugs undetected.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F146",
+      "title": "Path traversal via .github/ prefix bypass in _resolve_packet",
+      "location": "src/aiv/guard/runner.py:191",
+      "class": "path-traversal",
+      "severity": "high",
+      "evidence": "if not file_path.startswith(\".github/\"): ... resolved = Path(file_path) ... packet_content = resolved.read_text(encoding=\"utf-8\") — a path like .github/../.env passes the prefix check but resolves outside .github/; no canonical-path check is performed before file read",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F147",
+      "title": "SSRF via unvalidated user-controlled URLs in _head_check",
+      "location": "src/aiv/lib/validators/links.py:163",
+      "class": "ssrf",
+      "severity": "medium",
+      "evidence": "urlopen(req, timeout=_LINK_CHECK_TIMEOUT) where req = Request(url, method=\"HEAD\") and url originates from ArtifactLink.url parsed from packet content; no scheme allowlist or host allowlist enforced; enables probing of internal/cloud-metadata endpoints when --audit-links flag is active",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F148",
+      "title": "GitHub Actions expression injection via github.actor in shell run step",
+      "location": ".github/workflows/ci.yml:387",
+      "class": "injection",
+      "severity": "medium",
+      "evidence": "ACTOR=\"${{ github.actor }}\" — expression interpolated directly into bash heredoc before shell evaluation; GitHub currently restricts usernames to alphanumeric+hyphen but reliance on that external constraint is fragile; correct pattern is to pass via env: variable",
+      "intent_mismatch": false,
+      "status": "verified"
+    },
+    {
+      "id": "F149",
+      "title": "Authorization bypass: close command commits with --no-verify",
+      "location": "src/aiv/cli/main.py:1237",
+      "class": "authz",
+      "severity": "low",
+      "evidence": "subprocess.run([\"git\", \"commit\", \"--no-verify\", \"-m\", commit_msg], ...) — the close command explicitly bypasses pre-commit hooks when writing the verification packet commit, creating a channel where hook enforcement is skipped for AIV-internal commits; if close is compromised or called outside normal flow, no hook checks run",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F150",
+      "title": "owner/repo from git remote interpolated into GitHub API URL path",
+      "location": "src/aiv/guard/github_api.py:42",
+      "class": "ssrf",
+      "severity": "low",
+      "evidence": "self.base_url = \"https://api.github.com\" is hardcoded, limiting SSRF scope; however owner and repo values derived from GITHUB_REPOSITORY env var are interpolated into URL paths (e.g. /repos/{owner}/{repo}/...) without path-segment sanitization — a malformed GITHUB_REPOSITORY value like owner/../../../ could alter API endpoint routing, mitigated only by GitHub's URL normalization",
+      "intent_mismatch": false,
+      "status": "verified"
+    },
+    {
+      "id": "F151",
+      "title": "LinkValidator fetches user-supplied URLs without host or scheme restriction",
+      "location": "tests/unit/test_validators.py:427-479",
+      "class": "SSRF",
+      "severity": "medium",
+      "evidence": "TestLinkVitality monkeypatches `aiv.lib.validators.links.urlopen` at line 433, proving the production code calls urlopen with the raw URL from the verification packet when audit_links=True. The test suite covers 200, 404, 403, URLError, and dedup cases but includes zero tests verifying that non-HTTPS schemes (file://, http://) or internal IP ranges (169.254.169.254, 10.x.x.x) are blocked. The factory at line 392-416 constructs packets from arbitrary URLs without host allow-list validation. An attacker who controls a verification packet Class E link can trigger SSRF against cloud metadata endpoints or internal services when a validator runs with audit_links=True.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F152",
+      "title": "ArtifactLink.from_url accepts arbitrary URL schemes with no block test",
+      "location": "tests/unit/test_models.py:87-89",
+      "class": "SSRF",
+      "severity": "low",
+      "evidence": "TestArtifactLink.test_external_url_mutable at line 87 confirms that `ArtifactLink.from_url('https://example.com/some/page')` is accepted (classified as external, mutable=False) without rejection. No test covers file://, javascript:, gopher://, or http://169.254.169.254/ being rejected. Since LinkValidator (test_validators.py:427) feeds ArtifactLink URLs to urlopen, the absence of a scheme/host block test means those attack URLs can reach the network layer unchallenged.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F153",
+      "title": "Integration test propagates full process environment to subprocess under test",
+      "location": "tests/integration/test_svp_full_workflow.py:51",
+      "class": "secrets",
+      "severity": "medium",
+      "evidence": "Line 51: `env={**__import__('os').environ, 'PYTHONPATH': str(PROJECT_ROOT), 'PYTHONUTF8': '1'}` — the entire ambient environment is copied into the subprocess invocation. In CI pipelines this includes GITHUB_TOKEN, NPM_TOKEN, AWS_SECRET_ACCESS_KEY, and similar secrets. If the aiv CLI subprocess encounters an error that dumps environment variables to stdout/stderr (captured at lines 57-61 and shown in assertion messages), those secrets appear in test failure output and CI logs. The fix pattern is to start from a minimal environment dict rather than inheriting os.environ wholesale.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F154",
+      "title": "AutoFix test validates insecure mutable-branch URL generation with user-controlled filename",
+      "location": "tests/unit/test_auditor.py:370-381",
+      "class": "injection",
+      "severity": "low",
+      "evidence": "test_fix_class_e_local_ref at lines 370-381 uses the packet text `AUDIT_REPORT.md — Finding L01` as the local reference. The inline comment at line 379 explicitly states 'falls back to main' when git is unavailable. The assertions at lines 380-381 only check `https://github.com/` prefix and that `AUDIT_REPORT.md` appears in the fixed body — they do NOT assert that a SHA is present and do NOT reject the mutable 'main' branch URL. The test therefore validates as correct the following two insecure outcomes: (1) a user-controlled filename is embedded in the generated URL without sanitization (enabling path-component injection such as `../../secrets`), and (2) the URL uses a mutable branch reference, defeating the immutability enforcement the auditor is supposed to enforce.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F155",
+      "title": "Config loading test omits YAML unsafe-deserialization attack surface",
+      "location": "tests/unit/test_coverage.py:398-407",
+      "class": "injection",
+      "severity": "low",
+      "evidence": "TestAIVConfigFromFile.test_invalid_yaml_raises_configuration_error at lines 398-407 tests only syntactically malformed YAML (mixed tabs/spaces causing a parse error). No test supplies a YAML object-injection payload such as `strict_mode: !!python/object/apply:subprocess.check_output [['id']]` to verify that yaml.safe_load (not yaml.load) is used. Similarly test_reads_custom_prefixes_from_yaml in test_pre_commit_hook.py:326-334 loads attacker-writable .aiv.yml content without an unsafe-loader guard test. If the production loader uses yaml.load with Loader=None, writing a crafted .aiv.yml to a repository under test would achieve arbitrary code execution on the developer's machine at hook or init time.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F156",
+      "title": "No test for SVP session forgery via direct JSON file creation",
+      "location": "tests/unit/test_svp.py:443-528",
+      "class": "authz",
+      "severity": "medium",
+      "evidence": "TestSessionValidator exercises rules S001–S016 using in-memory SVPSession objects constructed by _make_complete_session(). The integration tests in test_svp_full_workflow.py run each phase through the CLI. However, no test creates a forged .svp/session-pr{N}.json file directly on disk and then calls `svp validate` to verify it is rejected. Because session files are plain JSON with no cryptographic signature, an actor who can write to the repository's .svp/ directory can manufacture a fully compliant session record and pass the validation gate without performing any of the four SVP phases. The test suite provides no adversarial coverage for this bypass path.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F157",
+      "title": "No test for markdown heading injection via --skip-reason embedded in evidence file",
+      "location": "tests/unit/test_cli_commit_skip.py:116-138",
+      "class": "injection",
+      "severity": "low",
+      "evidence": "TestSkipReasonStampedInEvidence.test_reason_in_class_a at lines 116-127 and test_reason_in_methodology at lines 129-138 verify that the --skip-reason text appears verbatim in the generated evidence file. Neither test supplies a reason string containing markdown structure such as `\\n## Class A (Execution Evidence)\\n\\n- pytest: 999 passed` to verify that injected headings do not create forged evidence sections in the rendered file. The evidence file is later audited by PacketAuditor which parses section headings; a forged Class A section from an injected skip-reason could satisfy tier requirements that the actual commit did not meet.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F158",
+      "title": "validate_file_type_triggers is dead code — never called by ValidationPipeline",
+      "location": "src/aiv/lib/validators/evidence.py:261",
+      "class": "doc-code-drift/dead-code",
+      "severity": "medium",
+      "evidence": "EvidenceValidator.validate_file_type_triggers() at evidence.py:261 documents four trigger categories — SQL/migration files, dependency manifests (pyproject.toml, requirements.txt), API schemas (.proto, openapi), and infrastructure files (Dockerfile, k8s/) — each of which must demand Class D evidence when triggered. However, ValidationPipeline.validate() at pipeline.py:126-128 calls only self.evidence_validator.validate(packet), which dispatches to EvidenceValidator.validate() at evidence.py:29-52. That method calls _validate_claim_evidence per claim (line 34) and the bug-fix Class F check (line 38); validate_file_type_triggers is not invoked. The method requires a second parameter changed_files: list[str] (evidence.py:263) that the pipeline has no mechanism to supply: ValidationContext at pipeline.py:34-43 carries no changed_files field, and the pipeline never parses changed file paths out of the diff. The feature is also claimed as active in .github/aiv-packets/VERIFICATION_PACKET_CRITIQUE_FIXES.md:26 ('The EvidenceValidator.validate_file_type_triggers() method inspects changed file paths and demands Class D evidence...'), but primary-source inspection of the pipeline shows zero call sites. E021/E022 findings from this method are therefore never emitted in practice, and Dockerfile, .sql, .proto, and pyproject.toml changes silently bypass the Class D demand the method was designed to enforce.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F159",
+      "title": "R1 evidence requirement: hook rubric documents {A,B} but pipeline enforces {A,B,E}",
+      "location": "src/aiv/lib/validators/pipeline.py:183",
+      "class": "doc-code-drift",
+      "severity": "high",
+      "evidence": "_TIER_REQUIRED[RiskTier.R1] at pipeline.py:183 contains {EvidenceClass.EXECUTION, EvidenceClass.REFERENTIAL, EvidenceClass.INTENT} — three classes. The pipeline's _check_tier_requirements at pipeline.py:229-241 blocks with E019 for any missing member of this set. In contrast, the user-facing rubric installed by aiv init prints at hooks/pre_commit.py:242-243: '[R1] LOW RISK - Standard Logic, Features, Bug Fixes. REQUIRES: [A + B]' — omitting Class E entirely. The rubric's R2 line at pre_commit.py:239-240 reads 'REQUIRES: [R1] + [C + E]', which structurally implies E is a NEW requirement at R2, contradicting the pipeline's placement of E at R1. A developer following the installed hook's rubric for an R1 commit will submit a packet with only Classes A and B, which the pipeline blocks with 'Risk tier R1 requires Class E (Intent) evidence, but none was found.' The mismatch affects the primary user touchpoint (the pre-commit rubric installed by aiv init) and three additional documentation sources: .cursorrules:18-21, .husky/pre-commit:98-99, and cli/main.py:308-310 (quickstart). The canonical.py:24 guard (CI) independently enforces {A,B,E} for R1, meaning the mismatch is present in both validation layers.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F160",
+      "title": "Rule IDs E020 and E021 each map to two unrelated finding types across validators",
+      "location": "src/aiv/lib/validators/evidence.py:113",
+      "class": "doc-code-drift/rule-id-collision",
+      "severity": "medium",
+      "evidence": "Rule ID E020 is emitted at two distinct sites with unrelated meanings: evidence.py:113 raises E020 for 'Class A (Execution) evidence links to a code file, not a CI run' (severity WARN); pipeline.py:248 raises E020 for 'Risk tier X: Class Y evidence is recommended but not required' (severity INFO). Rule ID E021 likewise collides: evidence.py:334 raises E021 for 'Database changes detected — Class D must include schema diff' (severity WARN, file-type trigger); links.py:140 and links.py:152 both raise E021 for 'Evidence link unreachable (HTTP {status})' and 'Evidence link could not be reached' (severity BLOCK/WARN). All findings from all validators are merged into ValidationResult.errors/warnings/info at pipeline.py:86-176 without namespacing. Any downstream consumer — CI suppression rules, dashboard aggregations, audit filters — that keys on rule_id will conflate a dead URL error with a missing Class D trigger, or conflate a code-blob link warning with an optional-class recommendation.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F161",
+      "title": "Class F adequacy checked by two validators with contradictory criteria for the same requirement",
+      "location": "src/aiv/lib/validators/evidence.py:402",
+      "class": "doc-code-drift/logic-inconsistency",
+      "severity": "medium",
+      "evidence": "anti_cheat.py:207 evaluates justification_text = claim.justification or claim.description, accepting description as a fallback, and clears the finding when len(justification_text) > 20. evidence.py:397-412 (_validate_provenance) checks if is_test_related and not has_negative_framing and not claim.justification, emitting E011 WARN when claim.justification is absent — it does not fall back to description. A Class F claim with description='Tests are preserved because the rename was purely cosmetic and all assertions are intact' (68 chars) and justification=None satisfies check_justification (description > 20 chars, anti-cheat gate passes) but simultaneously triggers E011 WARN from _validate_provenance (justification field is None). In non-strict mode (pipeline.py:164-169), the WARN does not block the commit, so the anti-cheat gate clears while the evidence validator flags the same claim as inadequate. A developer resolving the E011 WARN by populating claim.justification would then have redundant text; a developer who leaves it as-is sees the anti-cheat gate clear while the evidence validator continues to warn. The two validators enforce the same property — Class F adequacy — with contradictory standards.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F162",
+      "title": "_validate_differential Zero-Touch check covers only 5 DB CLI keywords, misses all other manual reproduction steps",
+      "location": "src/aiv/lib/validators/evidence.py:242",
+      "class": "doc-code-drift/missing-check",
+      "severity": "low",
+      "evidence": "evidence.py:242-258: manual_state_keywords = ['sqlite3', 'psql', 'mysql', 'mongo', 'query']. The Zero-Touch check for Class D only scans claim.reproduction.lower() for these five strings, blocking with E018 on a match. The method docstring at evidence.py:231 explicitly states 'Verifier must NOT run manually (Zero-Touch)', implying broad coverage. However, a claim.reproduction containing 'kubectl exec -it pod -- sh', 'docker exec', 'ssh host', 'redis-cli', 'clickhouse-client', 'curl localhost:8080', 'awslocal dynamodb scan', or any non-DB manual step passes unchallenged. ZeroTouchValidator (zero_touch.py) handles the broader Zero-Touch mandate for reproduction instructions but does not specifically validate Class D claims' reproduction field against manual-execution patterns; there is no cross-validator coverage closure. The combination leaves Class D evidence with manual infrastructure or cache operations entirely outside the Zero-Touch enforcement perimeter despite the documented mandate.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F163",
+      "title": "Test method name inverts its own assertion",
+      "location": "tests/unit/test_pre_commit_hook.py:35",
+      "class": "naming-inversion",
+      "severity": "low",
+      "evidence": "Method named `test_template_is_not_packet` at line 35 asserts `_is_packet('.github/aiv-packets/VERIFICATION_PACKET_TEMPLATE.md') is True`; the inline comment at line 37 confirms 'Templates match the pattern — they ARE packets structurally.' The method name declares the exact opposite of what the assertion verifies, making the test a misleading specification of hook behavior.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F164",
+      "title": "Module docstring says Phase 4 is tested via 'model injection'; every test uses the CLI",
+      "location": "tests/integration/test_svp_full_workflow.py:10",
+      "class": "stale-docstring",
+      "severity": "medium",
+      "evidence": "Module docstring line 10 reads 'Phase 4: Ownership Lock (manual — tested via model injection).' All Phase 4 coverage in the file invokes the CLI via `self._run('ownership', ...)` (lines 381-402 in test_full_journey_passes_validation, lines 439-460 in test_ownership_records_commit). No JSON-injection pattern exists anywhere in the file; the stated mechanism was never implemented.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F165",
+      "title": "test_full_journey_passes_validation docstring describes JSON injection; implementation uses live CLI",
+      "location": "tests/integration/test_svp_full_workflow.py:321",
+      "class": "stale-docstring",
+      "severity": "medium",
+      "evidence": "The method docstring at lines 321-322 states 'Phase 4 (ownership commit) is injected directly into the session JSON because it requires actual git operations that we mock here.' The implementation at line 381 calls `self._run('ownership', '42', '--repo', ..., '--commit-sha', 'a'*40, ...)` — a live subprocess CLI invocation with a dummy SHA, not JSON injection. The docstring describes an approach that does not exist in the code.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F166",
+      "title": "Docstring says 'main should NOT be mutable' but assertion confirms it IS mutable",
+      "location": "tests/unit/test_validators.py:298",
+      "class": "docstring-contradicts-assertion",
+      "severity": "medium",
+      "evidence": "Method `test_default_branch_not_mutable_with_custom_set` at line 297 has docstring (line 298) \"'main' should NOT be mutable if excluded from custom set.\" The assertion at line 304 is `assert link.is_immutable is False`, meaning `main` IS mutable. The word 'NOT' in the docstring states the inverse of what the test verifies, making the expected behavior ambiguous to a reader.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F167",
+      "title": "test_valid_markdown_packet asserts only canonical_enabled flag, not packet validity",
+      "location": "tests/unit/test_guard.py:408",
+      "class": "claim-not-verified",
+      "severity": "medium",
+      "evidence": "Test `test_valid_markdown_packet` (line 408) has inline comment 'Markdown-only should pass structure checks.' The sole assertion at line 424 is `assert result.canonical_enabled is False`. No assertion checks `result.block_count`, `result.warn_count`, or `result.overall_result`. The claimed validity check is absent; the test verifies only mode detection, not correctness.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F168",
+      "title": "TestAutoFix class claims to test auto-remediation but only checks for no crash",
+      "location": "tests/unit/test_auditor.py:356",
+      "class": "claim-not-verified",
+      "severity": "medium",
+      "evidence": "Class docstring at line 357 says 'Test the --fix mode auto-remediation.' The method `test_fix_commit_pending` (lines 359-368) ends with an explicit comment: 'In a non-git context, commit SHA won't be found, so pending stays / Just verify the auditor didn't crash.' The only assertion is `result.packets_scanned == 1`. No remediated content (e.g., SHA replacement) is verified, so auto-fix correctness is untested.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F169",
+      "title": "Claim 'hook catches --no-verify bypasses' tested only by string presence in hook file",
+      "location": "tests/unit/test_cli_init.py:139",
+      "class": "claim-not-verified",
+      "severity": "medium",
+      "evidence": "Test `test_pre_push_hook_content_mentions_no_verify` (line 139) has docstring 'Claim 2: Pre-push hook catches commits that bypassed pre-commit via --no-verify.' The assertion at line 149 is `assert '--no-verify' in content`, verifying only that the string literal appears somewhere in the generated hook shim file (likely a comment). The actual behavioral property — that the hook intercepts such commits — is not exercised. The test establishes documentation presence, not enforcement.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F170",
+      "title": "Test class docstring pins stale line numbers in auditor.py source",
+      "location": "tests/unit/test_auditor.py:244",
+      "class": "stale-line-reference",
+      "severity": "low",
+      "evidence": "Class `TestEvidenceTodoSeverity` docstring at lines 246-247 references 'auditor.py#L251-L262 (CLASS_E_NO_URL severity escalation) and auditor.py#L276-L296 (evidence_section tracking).' These line numbers are pinned to a historical version of auditor.py and will silently mispoint after any source refactoring, giving false audit trails to future reviewers.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F171",
+      "title": "test_frozen_model uses bare pytest.raises(Exception), masking the expected immutability exception",
+      "location": "tests/unit/test_models.py:97",
+      "class": "over-broad-assertion",
+      "severity": "low",
+      "evidence": "Method `test_frozen_model` at line 97 uses `with pytest.raises(Exception)` when attempting to mutate a Pydantic frozen model. This catches any exception including unrelated bugs. The expected exception for a Pydantic frozen model is `ValidationError` or `TypeError`; using the bare `Exception` base class means any runtime error would make the test pass, obscuring whether the freeze mechanism specifically is working.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F172",
+      "title": "Pre-commit hook and auditor disagree on whether TEMPLATE packets count as valid evidence",
+      "location": "tests/unit/test_pre_commit_hook.py:35",
+      "class": "cross-component-inconsistency",
+      "severity": "medium",
+      "evidence": "test_pre_commit_hook.py:35-38 asserts `_is_packet('...VERIFICATION_PACKET_TEMPLATE.md') is True`, so the hook gate accepts template files as valid packets. test_auditor.py:102-107 shows the auditor EXCLUDES templates: when one template and one real packet are present, `result.packets_scanned == 1`. A developer can therefore satisfy the pre-commit gate by committing a bare template file while the auditor skips it, leaving no actual evidence in the audit trail — a policy-enforcement gap in the non-bypassable compliance goal.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F173",
+      "title": "_run_git false 'never raises' contract",
+      "location": "src/aiv/lib/evidence_collector.py:249",
+      "class": "error-handling-gap",
+      "severity": "high",
+      "evidence": "Docstring at line 252 states 'Returns empty string on failure or timeout (never raises)' but the implementation at line 254 calls subprocess.run with timeout=30 and no try/except. If git is absent, FileNotFoundError propagates; if the 30-second timeout fires, subprocess.TimeoutExpired propagates. Callers such as collect_class_b (line 283), collect_class_c (line 457), and _get_test_file_provenance (line 499) all rely on this false contract and have no guard of their own.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F174",
+      "title": "github_api._request/_request_bytes miss URLError on network failures",
+      "location": "src/aiv/guard/github_api.py:43",
+      "class": "error-handling-gap",
+      "severity": "high",
+      "evidence": "Both _request (line 43) and _request_bytes (line 60) catch only urllib.error.HTTPError (an HTTP-level error) and re-raise it as GitHubAPIError. urllib.error.URLError (DNS failure, connection refused, connection reset, SSL error) is a parent class of HTTPError and is NOT caught. A network-level failure bypasses the except block and propagates as a raw URLError. list_pr_files (line 106) catches GitHubAPIError to break pagination but would crash on URLError; runner.py callers make no provision for it either.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F175",
+      "title": "Temporary resources leak on subprocess exception in _validate_packet",
+      "location": "src/aiv/hooks/pre_commit.py:183",
+      "class": "resource-leak",
+      "severity": "medium",
+      "evidence": "At line 183, audit_dir = tempfile.mkdtemp(prefix='aiv-audit-check-') is created outside any try/finally. The matching cleanup shutil.rmtree(audit_dir, ignore_errors=True) and Path(tmp_path).unlink(missing_ok=True) appear at lines 194-195, BEFORE the returncode check, but are only reached on the normal execution path. If subprocess.run at line 187 raises subprocess.TimeoutExpired (timeout=60) or FileNotFoundError (aiv not on PATH), the outer except Exception at line 212 catches it and returns True, leaving both audit_dir and tmp_path as orphaned temp resources on disk.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F176",
+      "title": "collect_class_a subprocess calls not wrapped in exception handlers",
+      "location": "src/aiv/lib/evidence_collector.py:348",
+      "class": "error-handling-gap",
+      "severity": "medium",
+      "evidence": "collect_class_a calls _run(pytest_cmd, timeout=360) at line 348, _run([...ruff...]) at line 420, and _run([...mypy...]) at line 425. _run at line 258 makes no attempt to catch subprocess.TimeoutExpired or FileNotFoundError. The function body of collect_class_a has no top-level try/except either. A missing pytest/ruff/mypy installation or a 6-minute pytest timeout raises an unhandled exception that propagates through commit_cmd in cli/main.py, crashing aiv commit with a Python traceback rather than a user-facing error message.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F177",
+      "title": "download_artifact_zip and _request_bytes are dead code",
+      "location": "src/aiv/guard/github_api.py:60",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "_request_bytes at line 60 is called exclusively from download_artifact_zip at line 169. download_artifact_zip is never invoked from runner.py: _inspect_class_a_run at lines 296-365 calls list_run_artifacts to find the aiv-evidence artifact, then immediately marks the rules as PASS at lines 364-365 without downloading or inspecting artifact contents. Both methods are unreachable from the guard's execution path.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F178",
+      "title": "search_code in github_api.py is dead code",
+      "location": "src/aiv/guard/github_api.py:191",
+      "class": "dead-code",
+      "severity": "info",
+      "evidence": "The search_code method (lines 191-202) is defined on GitHubAPI but is never called from runner.py or any other file in the audited surface. It imports urllib.parse lazily and queries the GitHub code-search API, but no guard pipeline stage references it. The method is unreachable from any call chain rooted at GuardRunner.run() or main() in runner.py.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F179",
+      "title": "Subprocess return value silently discarded — failures produce misleading assertion errors",
+      "location": "tests/unit/test_cli_init.py:54-59,63-69,76-83,127-136,139-148,191-197",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "Six test methods call subprocess.run([sys.executable, '-m', 'aiv', 'init', ...]) and discard the return value without checking returncode. Examples: test_creates_packets_dir (line 54), test_creates_evidence_dir (line 63), test_installs_pre_commit_hook (line 76), test_installs_pre_push_hook (line 127), test_pre_push_hook_content_mentions_no_verify (line 139), test_no_hook_skips_installation (line 191). If aiv init exits non-zero, the test reports e.g. 'AssertionError: pre-commit hook was not installed' or 'AssertionError: .github/aiv-packets is not a dir' with no indication the subprocess crashed; the actual stderr is captured but never surfaced.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F180",
+      "title": "Discarded subprocess return in TestSkipReasonStampedInEvidence masks command failures",
+      "location": "tests/unit/test_cli_commit_skip.py:118-121,131-134",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "test_reason_in_class_a (line 118) and test_reason_in_methodology (line 131) call _run_aiv_commit(...) without capturing or checking the returned CompletedProcess. If the command exits non-zero, the test fails with 'Expected 1 evidence file, got 0' (line 124 / line 136) rather than surfacing the subprocess's stderr. The fixture _run_aiv_commit is designed to return the CompletedProcess for inspection (the earlier TestSkipChecksBlockedForR1Plus tests do check result.returncode) but these two tests ignore it.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F181",
+      "title": "Dead file I/O — read result discarded",
+      "location": "tests/unit/test_auditor.py:365",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Inside TestAutoFix.test_fix_commit_pending, line 365 is 'p.read_text(encoding=\"utf-8\")'. The return value (the file content after the attempted auto-fix) is not assigned to any variable and not asserted against. The comment on lines 366-368 says 'Just verify the auditor didn't crash' and the only real assertion is 'assert result.packets_scanned == 1' on line 368. The read_text call is pure dead I/O: it allocates a string, performs a syscall, and immediately discards the result.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F182",
+      "title": "Missing top-level import — os accessed via inline __import__",
+      "location": "tests/integration/test_svp_full_workflow.py:51",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "The module imports json, subprocess, sys, pathlib.Path, and pytest at the top (lines 19-26), but NOT os. Inside _run() at line 51, the environment dict is built as '{**__import__(\"os\").environ, ...}'. This dynamic import hides the os dependency, bypasses static analysis tools, and silently re-evaluates __import__ on every call to _run(). A straightforward 'import os' at the top of the module is the standard pattern; the inline form is equivalent to dead code from a readability and tooling perspective.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F183",
+      "title": "_load_hook_config not mocked in test_functional_plus_packet_validates — implicit filesystem dependency",
+      "location": "tests/unit/test_pre_commit_hook.py:157-172",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "The helper _mock_main (line 108-122) patches six callables including _load_hook_config (line 120). The test test_functional_plus_packet_validates (line 157) uses raw 'with patch(...)' blocks and patches five of those six callables but omits _load_hook_config. At runtime the real _load_hook_config reads .aiv.yml from the current working directory. If the repo's own .aiv.yml defines custom functional_prefixes that exclude 'src/', then 'src/aiv/cli/main.py' is not considered functional and the test yields a false-positive pass (main() returns 0 for docs-only, not 1). The test is implicitly sensitive to CWD filesystem state.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F184",
+      "title": "test_valid_markdown_packet asserts only canonical_enabled — guard result and block_count unverified",
+      "location": "tests/unit/test_guard.py:408-425",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "TestGuardRunner.test_valid_markdown_packet (line 408) constructs a minimal markdown packet, runs GuardRunner(...).run(), and at line 425 asserts only 'result.canonical_enabled is False'. It never asserts result.block_count == 0, result.warn_count == 0, or result.overall_result == OverallResult.PASS. If the runner emits BLOCK-level findings for the submitted markdown (e.g. structural validation failures on the partial packet), the test passes as long as canonical mode is off. The intent of the test (line 423 comment: 'Markdown-only should pass structure checks') is not enforced by the assertion.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F185",
+      "title": "Mid-file module-level import breaks collection locality for rating tests",
+      "location": "tests/unit/test_svp.py:676",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "After five test classes (TestEnums through TestSessionType, lines 146-670), a bare module-level import appears at line 676: 'from aiv.svp.lib.rating import calculate_rating, score_session'. PEP 8 requires imports at the top of the file. More critically, if this import raises ImportError or AttributeError (e.g., during a refactor of aiv.svp.lib.rating), pytest fails to collect the entire module but the error points to line 676 inside what appears to be the body of the file rather than the module header, making triage harder. The import is unreachable from the test methods above it and acts as a latent failure point that shadows all collection errors for tests above it.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F186",
+      "title": "Line counter advances for +++ header lines due to missing negation in OR branch",
+      "location": "src/aiv/lib/validators/anti_cheat.py:132-142",
+      "class": "correctness/logic",
+      "severity": "low",
+      "evidence": "The line-counter condition `line.startswith('+') and not line.startswith('+++') or not line.startswith('-') and not line.startswith('\\\\') and not line.startswith('diff ')` is parsed by Python as `(A and B) or (C and D and E)`. For `+++ b/file.py`: A=True, B=False so first part is False; but C=True, D=True, E=True so second part is True, and `current_line` increments. The comment states only added lines and context lines should advance, not `+++` headers. Practical impact is nil because the subsequent `@@` hunk header always resets `current_line`, but it is a logic error against the stated intent.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F187",
+      "title": "Single Class F claim blanket-clears all anti-cheat findings regardless of scope",
+      "location": "src/aiv/lib/validators/anti_cheat.py:192-213",
+      "class": "correctness/logic",
+      "severity": "high",
+      "evidence": "In `check_justification`, the outer loop iterates every finding; for each finding the inner loop searches all Class F claims for ANY one with justification text longer than 20 chars. The first match sets `has_justification = True` and breaks, clearing that finding. Because the inner loop restarts identically for every subsequent finding, a single Class F claim with any 21-character text clears ALL anti-cheat findings simultaneously, regardless of how many distinct test files were modified or what violation types were found. A boilerplate provenance note would bypass enforcement for an unlimited number of deleted assertions and skipped tests across unrelated test files.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F188",
+      "title": "finalize() leaves compliance_level as 'L1' when guard runs in markdown-only mode",
+      "location": "src/aiv/guard/models.py:182-188",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "The `finalize()` method sets `compliance_level = 'NON-COMPLIANT'` only on the block-count > 0 branch. The PASS branch leaves the field at its dataclass default of `'L1'`. In `runner.py:144-150`, when no canonical JSON block is found, the code calls `self.result.finalize()` and returns immediately. If no blocking errors were raised, the serialized JSON shows `overall_result: PASS` and `compliance_level: L1`, misrepresenting a markdown-only validation run (which skips all canonical checks) as full L1 canonical compliance.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F189",
+      "title": "URL extraction skipped when artifact_raw starts with 'http' but contains trailing content",
+      "location": "src/aiv/lib/parser.py:585",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "In `_enrich_claims_with_evidence`, `url = self._extract_url(artifact_raw) if not artifact_raw.startswith('http') else artifact_raw` bypasses `_extract_url` when the raw text starts with 'http'. If `artifact_raw` is a multi-line evidence section such as `'https://github.com/owner/repo/actions/runs/123\\nSee context above'`, the full string including the newline and trailing text is passed directly to `ArtifactLink.from_url()`. Pydantic's `HttpUrl` validator rejects strings containing newlines, causing the `except Exception: artifact = artifact_raw` fallback at line 589 to activate. The claim then holds a plain-string artifact instead of a validated `ArtifactLink`, and link immutability checks are silently skipped. The identical pattern at line 603 has the same defect.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F190",
+      "title": "Auditor CLAIM_TODO and FIX_NO_CLASS_F checks silently skipped for ## Claims heading variant",
+      "location": "src/aiv/lib/auditor.py:390-401",
+      "class": "correctness/logic",
+      "severity": "medium",
+      "evidence": "In `_check_packet`, `claims_match = re.search(r'## Claim\\(s\\)\\s*\\n(.*?)(?=---|\\Z)', body, re.DOTALL)` matches only the `## Claim(s)` heading spelling. The guard's `required_sections_with_alts` in `runner.py:222-233` explicitly accepts `## Claims` as a valid alternative. Packets using `## Claims` produce `claims_match = None`, so the CLAIM_TODO check at lines 390-401 and the FIX_NO_CLASS_F check at lines 418-428 are both unconditionally skipped. A packet author using the `## Claims` variant can leave numbered claims as TODO placeholders and omit Class F for bug-fix claims without triggering any audit findings.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F191",
+      "title": "ELO tier inconsistency: from_elo(500) returns COMPETENT but VerifierRating(elo=500).tier is NOVICE",
+      "location": "tests/unit/test_svp.py:155,387,885",
+      "class": "logic",
+      "severity": "medium",
+      "evidence": "test_verifier_tier_from_elo at line 155 asserts from_elo(500)==COMPETENT; test_initial_rating at line 387 and test_starts_at_500 at line 885 both assert a freshly-constructed VerifierRating with elo=500 has tier==NOVICE. These three assertions cannot all be correct simultaneously: either from_elo maps 500 to COMPETENT (making the initial-rating tests wrong) or the initial tier is NOVICE (making the from_elo test wrong). The root cause is that VerifierRating.__init__ does not call from_elo/update_tier, so .tier is set to a hard-coded default (NOVICE) independent of the elo argument, while from_elo() computes COMPETENT for the same elo=500 value. Any caller that reads .tier on a newly constructed VerifierRating without first processing an event will silently receive the wrong tier.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F192",
+      "title": "or vs and in artifact-deduplication assertion allows half-correct behavior to pass",
+      "location": "tests/unit/test_validators.py:608",
+      "class": "logic",
+      "severity": "medium",
+      "evidence": "Line 608 reads: assert artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]. The test intent is that NEITHER claim 2 NOR claim 3 receives the same artifact as claim 1 (verifying no cross-claim leakage). The or operator makes the assertion vacuously true whenever at least one of the two conditions holds, so a bug in which claim 2 gets the same artifact as claim 1 while claim 3 does not (or vice versa) would pass this assertion. The correct operator is and, ensuring both conditions must hold simultaneously.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F193",
+      "title": "Unchecked FalsificationScenario defaults to result='confirmed', a semantically contradictory state",
+      "location": "tests/unit/test_svp.py:262-265",
+      "class": "logic",
+      "severity": "medium",
+      "evidence": "test_falsification_scenario_model constructs a FalsificationScenario and asserts fs.checked is False and fs.result == 'confirmed' on the same object. A scenario that has not been checked (checked=False) cannot have a meaningful result of 'confirmed': confirmation requires execution of the check. Code elsewhere that reads .result to decide trust without also guarding on .checked will incorrectly treat unverified scenarios as positive evidence. The default pairing of checked=False with result='confirmed' inverts the safe default, which should be checked=False with result=None or result='pending'.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F194",
+      "title": "Missing length guard before indexing evidence_files[0] in test_reason_in_methodology",
+      "location": "tests/unit/test_cli_commit_skip.py:134",
+      "class": "logic",
+      "severity": "low",
+      "evidence": "test_reason_in_methodology at line 134 accesses evidence_files[0].read_text() directly. Its sibling test test_reason_in_class_a at line 124 first asserts assert len(evidence_files) == 1 before indexing. If the aiv commit command fails silently (e.g. writes no evidence file), test_reason_in_methodology raises IndexError rather than a meaningful assertion failure, masking the actual defect and producing a confusing traceback that points to the test harness rather than the production code.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F195",
+      "title": "test_functional_plus_packet_validates omits _load_hook_config mock, making test environment-sensitive",
+      "location": "tests/unit/test_pre_commit_hook.py:158-172",
+      "class": "logic",
+      "severity": "low",
+      "evidence": "Every other test in test_pre_commit_hook.py that exercises hook logic uses the _mock_main helper, which always patches _load_hook_config to return default prefixes. test_functional_plus_packet_validates (lines 158-172) patches _is_packet, subprocess.run, and sys.exit directly but never patches _load_hook_config. If an .aiv.yml with custom functional_prefixes exists in the test execution directory, the hook will load those custom prefixes, potentially classifying src/aiv/cli/main.py as non-functional, causing the test to pass for the wrong reason or fail unexpectedly.",
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F196",
+      "title": "SSRF via unrestricted urlopen in _head_check",
+      "location": "src/aiv/lib/validators/links.py:163-168",
+      "class": "SSRF",
+      "severity": "high",
+      "evidence": "_head_check (line 166) builds a Request from a caller-supplied URL and passes it directly to urlopen with no scheme whitelist and no private-IP blocklist. URLs originate from user-controlled packet evidence fields (packet.intent.evidence_link and claim.artifact.url). Accepted schemes include file://, ftp://, and gopher://, and no filter blocks 169.254.169.254 or RFC-1918 ranges. An attacker who can author a packet can trigger outbound requests to any host reachable from the runner.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F197",
+      "title": "Path traversal in _resolve_packet via weak prefix check",
+      "location": "src/aiv/guard/runner.py:191-200",
+      "class": "path traversal",
+      "severity": "high",
+      "evidence": "_resolve_packet checks file_path.startswith('.github/') at line 191 but never calls Path(file_path).resolve() to canonicalise the path before reading it at line 200 with resolved.read_text(). An attacker controlling the PR body can supply 'Packet Source: .github/../../../../etc/passwd', which passes the prefix guard while resolving outside the working directory. The design intent is to restrict packet sources to .github/, but the imperfect guard subverts this invariant.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F198",
+      "title": "URL query-string injection in get_file_content",
+      "location": "src/aiv/guard/github_api.py:176",
+      "class": "injection",
+      "severity": "medium",
+      "evidence": "get_file_content constructs the API URL as f\"{self.base_url}/repos/{ctx.owner}/{ctx.repo}/contents/{path}?ref={ref}\" without URL-encoding path or ref. A path value such as 'README.md?ref=main&per_page=100' or a ref value such as 'abc&per_page=100' injects extra query parameters. By contrast, search_code at line 195 in the same file correctly applies urllib.parse.quote before interpolation, demonstrating awareness of the issue.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F199",
+      "title": "Unbounded base64 decode in _read_scope_inventory",
+      "location": "src/aiv/guard/canonical.py:438-441",
+      "class": "injection",
+      "severity": "medium",
+      "evidence": "_read_scope_inventory (line 440) slices the raw ref string after the 'inline-b64-json:' prefix and immediately calls base64.b64decode(payload).decode('utf-8') with no length guard. A packet author can embed a multi-megabyte base64 payload; the runtime decodes the entire blob before any size check can occur. No upper-bound validation exists anywhere in the function prior to the decode call.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F200",
+      "title": "GITHUB_TOKEN exposed in plain instance attribute with no repr masking",
+      "location": "src/aiv/guard/github_api.py:40",
+      "class": "secrets",
+      "severity": "medium",
+      "evidence": "GitHubAPI.__init__ stores the token as self.token (line 40, a plain string attribute). The class defines no __repr__ or __str__ override, so repr(api) or pickling emits the token value. The Authorization header dict is built in _request (line 47) and is visible in the local frame of any exception traceback captured by logging or crash reporters. The GitHubAPIError raised at line 55 chains from the HTTPError (from e), preserving the call frame that holds headers.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F201",
+      "title": "Obfuscated dynamic import __import__('json') in security-enforcement code",
+      "location": "src/aiv/guard/canonical.py:442",
+      "class": "injection",
+      "severity": "info",
+      "evidence": "_read_scope_inventory uses __import__('json').loads(decoded) instead of a top-level import statement. In a tool whose explicit purpose is auditability and reproducible verification, using a dynamic import evades static-analysis scanners that track json.loads call sites and obscures that user-supplied base64 data is being parsed. The pattern is inconsistent with every other JSON usage in the codebase, all of which use a plain 'import json' at module level.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F202",
+      "title": "SSRF: LinkValidator makes unguarded HTTP requests to user-controlled URLs",
+      "location": "tests/unit/test_validators.py:427",
+      "class": "SSRF",
+      "severity": "high",
+      "evidence": "TestLinkVitality (lines 419-544) confirms that LinkValidator(audit_links=True) calls urlopen() with URLs extracted verbatim from user-controlled packet content. Tests monkeypatch urlopen to return 200/404/403/URLError (lines 427-479), revealing the production call pattern. Zero tests verify that loopback addresses (127.0.0.1), link-local (169.254.x.x), RFC-1918 private ranges, or non-https schemes are blocked. An attacker supplying 'http://169.254.169.254/latest/meta-data/' as a Class-E link would receive a real outbound request from the machine running 'aiv audit' with audit_links=True, satisfying the SSRF definition.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F203",
+      "title": "SSRF: LinkValidator follows HTTP redirects without limit; no redirect-chain test exists",
+      "location": "tests/unit/test_validators.py:465",
+      "class": "SSRF",
+      "severity": "medium",
+      "evidence": "test_audit_links_network_error_warns (lines 465-479) patches urlopen to raise URLError and expects Severity.WARN. Python's urllib.request.urlopen follows redirects by default. No test verifies that a redirect from a public domain to an internal host (e.g. http://localhost/) is blocked. This allows a public URL that redirects to an internal service to bypass any origin-only SSRF defenses, because the production code makes the redirected request before any host check could apply.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F204",
+      "title": "Injection: --skip-reason text written verbatim to evidence .md files with no sanitization test",
+      "location": "tests/unit/test_cli_commit_skip.py:114",
+      "class": "injection",
+      "severity": "medium",
+      "evidence": "TestSkipReasonStampedInEvidence (lines 114-138) tests only benign alphanumeric strings ('Help text only, no logic changes', 'Formatting only') and asserts verbatim embedding via 'assert reason in content' at line 126. No test verifies that markdown-injection strings (e.g. '\\n## Classification\\n  risk_tier: R0\\n'), null bytes, or format-breaking characters in --skip-reason are rejected or escaped before being written to the .md evidence file. A developer-supplied skip-reason containing forged markdown headings could corrupt the evidence file structure or inject false verification tier claims that the auditor subsequently reads as authoritative.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F205",
+      "title": "Authz: SVP verifier identity is a self-asserted string with no cryptographic-binding or trusted-source test",
+      "location": "tests/unit/test_svp.py:511",
+      "class": "authz",
+      "severity": "medium",
+      "evidence": "test_s011_wrong_verifier (lines 511-517) checks S011 by comparing the string author_github_id to the string session.verifier_id. No test verifies that author_github_id is derived from a trusted source (e.g. git commit signature, a verified GitHub token), rather than being a caller-supplied value in the session JSON. An operator who can write the session file can set verifier_id and author_github_id to any matching string and pass the ownership authz check. No tests cover empty-string, whitespace-only, or impersonation-pattern identifiers (e.g. 'admin', 'root') that should be rejected.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F206",
+      "title": "Injection: auto-fix mode generates mutable /blob/main/ URLs, defeating the auditor's own immutability enforcement",
+      "location": "tests/unit/test_auditor.py:370",
+      "class": "injection",
+      "severity": "medium",
+      "evidence": "test_fix_class_e_local_ref (lines 370-381) documents that when auto-fix cannot obtain a git SHA (non-git context), it constructs GitHub URLs with branch 'main'; the test comment at line 379 reads 'falls back to main'. The same PacketAuditor detects mutable branch URLs as CLASS_E_MUTABLE ERROR (verified at lines 145-155). The auto-fix therefore introduces the very violation class it is designed to detect. An operator using 'aiv audit --fix' outside a git repo would silently clear a CLASS_E_NO_URL warning by substituting a CLASS_E_MUTABLE ERROR-class link — the follow-on audit pass would flag it differently, creating a confusion window that could be exploited to appear compliant.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F207",
+      "title": "Injection: inline-json scope inventory reference accepts unvalidated JSON payload",
+      "location": "tests/unit/test_guard.py:92",
+      "class": "injection",
+      "severity": "low",
+      "evidence": "_minimal_canonical() at line 92 constructs an evidence artifact reference as 'inline-json:' + json.dumps(['README.md']), implying the production canonical validator strips the 'inline-json:' prefix and deserializes the remainder. No test passes a malicious payload (deeply nested dicts, enormous arrays, unicode escapes, or type-confusion inputs) to this field. If the production deserialization path lacks a size cap or type assertion, an attacker embedding a crafted inline-json reference in a packet could trigger JSON deserialization of attacker-controlled input, risking property injection or resource exhaustion in the guard runner.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F208",
+      "title": "Authz: pre-push hook verified by content check only; no test confirms actual git-push execution triggers the hook",
+      "location": "tests/unit/test_pre_push_hook.py:189",
+      "class": "authz",
+      "severity": "low",
+      "evidence": "TestMain (lines 189-238) mocks sys.stdin, _get_commits_in_range, and _get_commit_files — the entire real execution path is replaced. test_cli_init.py verifies that the installed hook file contains 'from aiv.hooks.pre_push import main' (line 137) but never performs a real 'git push' to confirm the shebang, file permissions, or hook invocation path are correct. A subtle installation defect (wrong permissions, absent shebang line, Python path misconfiguration) would allow all commits to bypass the pre-push authz gate undetected by the test suite.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F209",
+      "title": "aiv close commits the verification packet with --no-verify, bypassing the hook it installs",
+      "location": "src/aiv/cli/main.py:1237",
+      "class": "doc/code drift",
+      "severity": "high",
+      "evidence": "Line 1237 executes `['git', 'commit', '--no-verify', '-m', commit_msg]` to commit the Layer 2 VERIFICATION_PACKET_*.md. The `--no-verify` flag skips the pre-commit hook that `aiv init` installs. The protocol states every commit must pass hook enforcement, but the one commit that carries the verification packet is explicitly exempt from that enforcement, creating a self-exemption gap in the attestation chain.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F210",
+      "title": ".husky/pre-commit PACKET_PATTERN does not match Layer 1 EVIDENCE_*.md files or PACKET_*.md prefix, diverging from Python hook",
+      "location": ".husky/pre-commit:61",
+      "class": "doc/code drift",
+      "severity": "high",
+      "evidence": "The bash hook at line 61 defines `PACKET_PATTERN=\"^\\\\.github/(aiv-packets/)?VERIFICATION_PACKET_.*\\\\.md$\"`. The Python hook at `src/aiv/hooks/pre_commit.py:46-52` recognises three prefixes: `.github/aiv-packets/VERIFICATION_PACKET_`, `.github/VERIFICATION_PACKET_`, and `.github/aiv-packets/PACKET_`, plus a separate `EVIDENCE_PREFIX = \".github/aiv-evidence/EVIDENCE_\"`. The bash hook is missing `.github/aiv-packets/PACKET_*.md` (third Python prefix) and all Layer 1 evidence files. Husky-managed developers committing `aiv commit` output (an EVIDENCE_*.md + source file pair) would have the bash hook treat the EVIDENCE file as an unrecognised functional file, either blocking the commit or letting it pass without proper packet detection — the Two-Layer Architecture bypass present in Python hook lines 381-404 is absent from the bash hook entirely.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F211",
+      "title": "pre_commit.py module docstring claims to be a 'feature-complete port' of the bash hook but adds Rules 10, EVIDENCE_PREFIX handling, and active-change-context bypass not present in the bash hook",
+      "location": "src/aiv/hooks/pre_commit.py:7",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "The module docstring at line 7 says 'Feature-complete port of the original .husky/pre-commit (285 lines of bash)'. However the Python hook adds at least three capabilities absent from the bash hook: (1) `EVIDENCE_PREFIX = \".github/aiv-evidence/EVIDENCE_\"` at line 52 gives Layer 1 files a distinct code path, (2) an active-change-context bypass at lines 381-404 that exempts commits made within an `aiv begin`/`aiv commit` session, and (3) Rule 10 at line 424 that classifies any unrecognised 2-file combination. The docstring also lists only Rules 1-9 (lines 15-24) while the implementation contains Rule 10, making the rule inventory stale.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F212",
+      "title": ".cursorrules risk-tier definitions document R0-R3 but omit the per-tier evidence-class requirements enforced by canonical.py and pipeline.py",
+      "location": ".cursorrules:30-35",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "`.cursorrules:30-35` defines the four tiers only as risk-level descriptions (e.g. 'R1: Low risk (bug fixes, refactors)'). `src/aiv/guard/canonical.py:25` enforces R1 = `['A','B','E']`, R2 adds C, R3 adds D+F. `src/aiv/lib/validators/pipeline.py:183` enforces R1 requires `{EXECUTION, REFERENTIAL, INTENT}`. An AI assistant following `.cursorrules` is told only to pass `-t R1` and `-i <url>` but receives no guidance that Class E is mandatory for R1 and that missing it causes a guard block. The gap is partially offset by the `-i MUST be a URL` rule at `.cursorrules:18`, but the tier-to-class mapping is completely absent.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F213",
+      "title": "runner.py docstring references a non-existent 2244-line inline JS guard",
+      "location": "src/aiv/guard/runner.py:5",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "The module docstring at line 5 states 'Replaces the 2244-line inline JS in aiv-guard.yml'. No file in the repository contains 2244 lines of JavaScript guard logic; `.github/workflows/aiv-guard-python.yml` runs `python -m aiv.guard` and never contained embedded JS. The reference describes a deleted or never-committed precursor, leaving a ghost cross-reference in the canonical docstring.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F214",
+      "title": "ci.yml workflow is restricted to main-branch events only; pre_push.py Layer 3 claim that CI protocol-audit covers all pushed branches is false for feature branches",
+      "location": ".github/workflows/ci.yml:5-7",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "`ci.yml:5-7` constrains both the `push` and `pull_request` triggers to `branches: [ main ]`. The `protocol-audit` job at line 64 therefore only fires when changes reach main. `src/aiv/hooks/pre_push.py:17-22` describes its Layer 3 defense as 'CI protocol-audit (cross-commit coverage check)', implying that `git push` from any branch activates this CI layer. Pushes to feature branches fire the pre-push hook but do NOT trigger the `protocol-audit` job, leaving the stated Layer 3 coverage absent for all non-main pushes.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F215",
+      "title": ".husky/ path listed in HookConfig.functional_prefixes creates circular enforcement for changes to the bash hook itself",
+      "location": "src/aiv/lib/config.py:154",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "`HookConfig.functional_prefixes` includes `\".husky/\"` at line 154, classifying any change to `.husky/pre-commit` as a functional change requiring a verification packet. The commit of that packet is then enforced by the same `.husky/pre-commit` hook being modified. While `aiv close` bypasses the hook via `--no-verify` (line 1237 in cli/main.py), the circularity is undocumented and the Python hook's `active change context` bypass (pre_commit.py:381-404) is the only functional escape hatch. Developers not using `aiv init` (Husky-only workflows) have no documented way to modify the enforcement hook.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F216",
+      "title": "Rule ID E021 is assigned to two unrelated violation types across evidence.py and links.py",
+      "location": "src/aiv/lib/validators/evidence.py:334",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "`EvidenceValidator.validate_file_type_triggers()` at `evidence.py:334` emits `rule_id='E021'` for 'Database/dependency/API/infrastructure changes detected without Class D evidence'. `LinkValidator._check_link_vitality()` at `links.py:140` and `links.py:152` also emits `rule_id='E021'` for 'Evidence link unreachable (HTTP {status})' and 'Evidence link could not be reached'. Both rule IDs resolve to the same string 'E021' in output, making automated filtering or suppression of one class of E021 findings impossible without also suppressing the other.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F217",
+      "title": "EvidenceValidator.validate_file_type_triggers() is unreachable dead code — the ValidationPipeline never calls it",
+      "location": "src/aiv/lib/validators/evidence.py:261",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "The method signature is `validate_file_type_triggers(self, packet: VerificationPacket, changed_files: list[str])`. `BaseValidator.validate()` accepts only `packet`; `ValidationPipeline` calls `validator.validate(packet)` for each stage, never passing `changed_files`. A grep of `src/` finds zero callers of `validate_file_type_triggers` — the method is defined once at line 261 and never invoked. File-type-triggered evidence requirements (e.g., 'Database changes detected — Class D must include schema diff') are therefore never enforced in any code path, despite being documented as requirements (evidence.py:275-301).",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F218",
+      "title": "StructureValidator class docstring claims to check E001, E003, E006, E007 but validate() checks none of them",
+      "location": "src/aiv/lib/validators/structure.py:24-30",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "The class docstring at lines 24-30 itemises four checks: 'Header exists (E001)', 'Intent section exists with Class E link (E002, E003)', 'At least one claim section (E005)', 'Each claim has evidence class (E006) and artifact (E007)'. The `validate()` method at lines 31-78 checks only E002 (verifier_check length ≥ 10), E005 (claim description quality), and E008 (reproduction field present). E001, E003, E006, and E007 appear in the docstring but are absent from the code without an explanatory comment indicating parser-time enforcement — unlike E002 and E005 which do have inline comments noting parser delegation.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F219",
+      "title": "scripts/map_packets.py indexes only Layer 2 VERIFICATION_PACKET_*.md files; Layer 1 EVIDENCE_*.md files in .github/aiv-evidence/ are invisible to it",
+      "location": "scripts/map_packets.py:15",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "`PACKET_PREFIX = \".github/aiv-packets/VERIFICATION_PACKET_\"` at line 15 is the sole detection pattern for packets. Layer 1 evidence files at `.github/aiv-evidence/EVIDENCE_*.md` (created by `aiv commit`) are never scanned. The script's own markdown output describes itself as the 'evidence index' answering 'Show me all evidence for file X', but a file exclusively covered by Layer 1 evidence would show as unmapped. `migrate_two_layer.py` (the migration tool) writes to `.github/aiv-evidence/` but `map_packets.py` has no corresponding read path, making the Two-Layer Architecture's Layer 1 half invisible to the official audit mapping tool.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F220",
+      "title": "Integration test docstring claims Phase 4 uses JSON injection but code uses CLI",
+      "location": "tests/integration/test_svp_full_workflow.py:317",
+      "class": "doc/code drift",
+      "severity": "high",
+      "evidence": "Docstring at line 317 states: 'Phase 4 (ownership commit) is injected directly into the session JSON because it requires actual git operations that we mock here.' However lines 381-402 exercise Phase 4 entirely via self._run('ownership', ...) — the real CLI command — with no JSON injection anywhere in the test body. The discrepancy is a direct contradiction between the stated test strategy and the actual implementation.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F221",
+      "title": "Module docstring declares '4 phases' but test assertions verify 5 distinct phase keys",
+      "location": "tests/integration/test_svp_full_workflow.py:4",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "The module docstring (lines 4-16) reads 'Validates the verifier's journey through all 4 phases: Phase 1-Phase 4', omitting any mention of Phase 0. Yet test_full_journey_passes_validation (lines 408-415) asserts five phase keys: phase_0_complete, phase_1_complete, phase_2_complete, phase_3_complete, phase_4_complete. The unit test at tests/unit/test_svp.py:542 also confirms 5 phases via comment '# 3/5 phases' for a session with only Phase 0-2 complete. Phase 0 (Sanity/aiv_guard_passed) is a real protocol phase that is absent from the integration-test documentation.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F222",
+      "title": "Test name and docstring say 'main should NOT be mutable' but assertion asserts IS mutable",
+      "location": "tests/unit/test_models.py:296",
+      "class": "doc/code drift",
+      "severity": "high",
+      "evidence": "Method test_default_branch_not_mutable_with_custom_set has docstring \"'main' should NOT be mutable if excluded from custom set.\" The assertion on line 304 is `assert link.is_immutable is False`, which means the link IS mutable (is_immutable=False). The inline comment on line 303 reinforces this: '# still non-SHA, so still mutable'. The test name/docstring are therefore inverted relative to what the assertion actually checks.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F223",
+      "title": "test_cli_init.py docstring claims hook 'catches' bypassed commits but test only checks string presence",
+      "location": "tests/unit/test_cli_init.py:139",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "TestInitInstallsPrePushHook.test_pre_push_hook_content_mentions_no_verify docstring (line 140) states: 'Claim 2: Pre-push hook catches commits that bypassed pre-commit via --no-verify.' The test body at lines 147-149 only checks `assert '--no-verify' in content`, verifying that the string '--no-verify' appears somewhere in the hook shim. It does NOT verify that the hook actually intercepts or rejects commits made with --no-verify. The claim of 'catches' implies behavioral enforcement; the test only verifies documentary presence.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F224",
+      "title": "TestRule8TooManyFiles.test_three_functional_files_rejected stages only two functional files",
+      "location": "tests/unit/test_pre_commit_hook.py:233",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "Class TestRule8TooManyFiles at line 233 and its test test_three_functional_files_rejected imply three functional files trigger rejection. The staged list at lines 238-242 contains ['src/a.py', 'src/b.py', '.github/aiv-packets/VERIFICATION_PACKET_FOO.md']. The packet file is not functional, leaving only two functional files. The rule being tested (too many functional files) is triggered by two functional files, not three; the name overstates the count by one.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F225",
+      "title": "Test docstring hard-codes specific line numbers in auditor.py that will become stale",
+      "location": "tests/unit/test_auditor.py:243",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "TestEvidenceTodoSeverity class docstring (lines 243-246) reads: 'These tests cover the auditor change in auditor.py#L251-L262 (CLASS_E_NO_URL severity escalation) and auditor.py#L276-L296 (evidence_section tracking).' These absolute line-number anchors will silently mismatch the actual source lines after any insertion or deletion in auditor.py, making the reference misleading without any warning.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F226",
+      "title": "OR-logic in assertion contradicts comment that 'Claims 2 AND 3' must differ from claim 1",
+      "location": "tests/unit/test_validators.py:606",
+      "class": "doc/code drift",
+      "severity": "high",
+      "evidence": "At lines 606-610 the comment reads: '# Claims 2 and 3 should NOT have consumed the same artifact'. The assertion is `artifacts[1] != artifacts[0] or artifacts[2] != artifacts[0]`. OR logic means the test passes even if claim 2 and claim 1 share the same artifact (so long as claim 3 differs), or vice versa. The documented intent ('Claims 2 AND 3 should NOT...') requires AND logic to ensure neither claim 2 nor claim 3 re-uses the unlinked artifact. As written, a partial reuse of the bug would produce a false-pass.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F227",
+      "title": "test_fix_commit_pending name implies autofix succeeds but body only verifies no-crash",
+      "location": "tests/unit/test_auditor.py:359",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "TestAutoFix.test_fix_commit_pending (lines 359-368) is classed under TestAutoFix and named to suggest the fix-mode remediation is exercised. The inline comment at line 365 says 'In a non-git context, commit SHA won't be found, so pending stays' and the sole assertion at line 367 is `assert result.packets_scanned == 1`. The test does not assert that `pending` was replaced, nor that any remediation occurred. The test name advertises a capability (fix commit pending) that is explicitly not exercised.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F228",
+      "title": "test_r0_has_class_b_and_a name omits Class E even though Class E is also asserted",
+      "location": "tests/unit/test_coverage.py:36",
+      "class": "doc/code drift",
+      "severity": "low",
+      "evidence": "TestBuildEvidenceSections.test_r0_has_class_b_and_a asserts three evidence classes: Class B (line 38), Class A (line 39), and Class E (line 40). The test name references only B and A. Class E is present per the assertion with comment 'structurally required by parser'. Combined with test_guard.py:449 asserting REQUIRED_CLASSES['R0'] == ['A', 'B'] (no E), there is an undocumented divergence: the guard enforces [A,B] but the evidence builder always emits E for R0.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F229",
+      "title": "R0 required evidence classes differ between guard definition and evidence-builder output",
+      "location": "tests/unit/test_guard.py:449",
+      "class": "doc/code drift",
+      "severity": "medium",
+      "evidence": "test_guard.py:449 asserts `REQUIRED_CLASSES['R0'] == ['A', 'B']`, defining R0 as needing only Class A and B. test_coverage.py:42 asserts `assert '### Class E' in result` for an R0 call to _build_evidence_sections, with comment 'structurally required by parser'. The guard rejects R0 packets missing A or B but does not list E as required; the builder unconditionally emits E. This creates an inconsistency in what R0 compliance means: guard-enforced vs. builder-generated evidence sets disagree on Class E.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F230",
+      "title": "json.JSONDecodeError before Exception in except tuple is dead code",
+      "location": "src/aiv/lib/change.py:82",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Line 82 reads `except (json.JSONDecodeError, Exception)`. Because json.JSONDecodeError is a subclass of Exception, listing it first in the tuple is redundant — the second clause already matches every instance the first would. The json.JSONDecodeError clause can never be reached in isolation; any handler logic intended to be specific to JSON errors is dead. Correct idiom: list the subclass after the superclass when distinct handling is needed, or remove the subclass if the same handler applies to both.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F231",
+      "title": "load_hook_config silently swallows all YAML and I/O errors via bare except: pass",
+      "location": "src/aiv/lib/config.py:284",
+      "class": "error-handling",
+      "severity": "low",
+      "evidence": "Lines 263-285: the entire YAML parse and config-extraction block is wrapped in `try: ... except Exception: pass`. Any error — malformed YAML, wrong type for `functional_prefixes`, `FileNotFoundError` — causes the function to return hardcoded defaults with zero diagnostic output. A corrupt `.aiv.yml` that removes all functional prefixes silently reverts the hook to default prefixes, potentially misclassifying files as functional or non-functional without any visible indication that the config was ignored. The hook's policy enforcement depends on this config, making the silent fallback a correctness risk.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F232",
+      "title": "_run_git in evidence_collector.py unguarded against FileNotFoundError and TimeoutExpired",
+      "location": "src/aiv/lib/evidence_collector.py:249",
+      "class": "error-handling",
+      "severity": "high",
+      "evidence": "_run_git at lines 249-255 calls `subprocess.run([\"git\", *args], capture_output=True, text=True)` with no try/except. When git is not on PATH this raises `FileNotFoundError`; if `timeout=` is passed by a future caller, `subprocess.TimeoutExpired` would also propagate. Direct callers such as `collect_class_b` (line 283) call `_run_git` outside any try/except, so either exception propagates up through the evidence collection pipeline and crashes the entire pre-commit hook run with an unhandled traceback rather than a structured diagnostic.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F233",
+      "title": "Temp file and temp dir in _validate_packet not guarded with try/finally; outer except silently allows commits on failure",
+      "location": "src/aiv/hooks/pre_commit.py:155",
+      "class": "resource-handling",
+      "severity": "medium",
+      "evidence": "_validate_packet (lines 155-213) creates a NamedTemporaryFile (line 155) and a mkdtemp directory (line 183). Neither resource is enclosed in a try/finally block: an exception between creation and the manual `tmp_path.unlink()` / `shutil.rmtree(audit_dir)` calls at lines 209-211 leaks OS temp resources. More critically, the outer `except Exception as exc` at line 212 prints a WARNING and returns True — the caller interprets True as 'packet is valid'. Any infrastructure failure (broken pipe, missing Python binary, import error in the validator) silently lets the commit through, defeating the non-bypassability guarantee stated in pre_push.py:16.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F234",
+      "title": "Variable existence checked via dir() instead of locals() — unreliable scope test",
+      "location": "src/aiv/cli/main.py:1664",
+      "class": "logic-error",
+      "severity": "low",
+      "evidence": "Lines 1664 and 1721 evaluate `\"changed_symbols\" in dir()` and `\"class_c_data\" in dir()` respectively to determine whether those local variables were assigned earlier in the function. `dir()` with no argument is defined by CPython to return an approximation of the local scope, but it is an interactive introspection aid rather than a guaranteed scope predicate; the correct idiom is `\"name\" in locals()`. When `line_ranges` is empty (line 1631), `changed_symbols` is never assigned, and the dir() check yields environment-dependent results. If the check returns True spuriously, the unbound name is referenced and raises NameError.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F235",
+      "title": "Redundant 'import subprocess as _sp' aliases a module already imported in the same scope",
+      "location": "src/aiv/cli/main.py:1488",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Line 1413 imports `subprocess` at the top of the `commit_cmd` function body (or the enclosing module). Line 1488 then executes `import subprocess as _sp`, creating a local alias `_sp` used for `_diff_check` and `_staged_check` at lines 1490-1500. The alias adds no encapsulation; `subprocess` is already accessible and the alias is not used anywhere that requires a different name. The second import is dead weight and increases the local-variable namespace noise.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F236",
+      "title": "Unguarded read_text and write_text in auditor.audit() loop crash entire run on single-file error",
+      "location": "src/aiv/lib/auditor.py:236",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "Inside the `audit()` loop (lines 230-260), `p.read_text(encoding='utf-8')` at line 236 and `p.write_text(new_body, encoding='utf-8')` at line 247 are called with no surrounding try/except. A permission error, file deleted between the glob and the read, or disk-full condition during write raises an unhandled exception that aborts the entire audit run, discarding all findings collected from previously processed packets. No partial-results report is emitted before the crash.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F237",
+      "title": "urllib.error.URLError not caught in _request / _request_bytes — network failures crash the guard",
+      "location": "src/aiv/guard/github_api.py:54",
+      "class": "error-handling",
+      "severity": "high",
+      "evidence": "`_request` (lines 43-58) catches `HTTPError` at line 54 but not `urllib.error.URLError`, which covers DNS resolution failures, connection refused, OS-level timeouts, and SSL errors. `_request_bytes` (line 60-76) has the same gap. Neither wraps the urlopen call in a broad URLError handler. Callers such as `list_pr_files` (line 116) catch only `GitHubAPIError`; raw `URLError` therefore propagates unhandled all the way to the GitHub Actions step, producing a raw Python traceback in CI output instead of a structured guard failure message.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F238",
+      "title": "Hardcoded 'python' invocation in _run_local_checks breaks virtual-environment isolation",
+      "location": "src/aiv/cli/main.py:743",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "Line 743 runs `subprocess.run([\"python\", \"-m\", \"pytest\", \"--tb=no\", \"-q\"], ...)`. In a virtual environment, `python` may not be on PATH or may resolve to the system interpreter rather than the activated venv's interpreter, causing pytest to run against incorrect dependencies or fail with a ModuleNotFoundError. The correct idiom is `sys.executable` (already imported at the top of the file), which always resolves to the interpreter running the current process.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F239",
+      "title": "guard/runner.py main() has no exception handling around env parsing or API calls — raw tracebacks in CI",
+      "location": "src/aiv/guard/runner.py:393",
+      "class": "error-handling",
+      "severity": "medium",
+      "evidence": "The `main()` entry point at line 393 calls `GitHubAPI.context_from_env()` and `runner.run()` with no surrounding try/except. Missing required environment variables (`GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_EVENT_NAME`) raise `KeyError`; network or API failures raise `GitHubAPIError` or `URLError`. All these surface as raw Python tracebacks in the GitHub Actions log with no structured error message, exit-code mapping, or diagnostic hint to the developer about which variable or API call failed.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F240",
+      "title": "guard/manifest.py entire module is unreachable dead code — no callers in audited surface",
+      "location": "src/aiv/guard/manifest.py:1",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "The four public functions `validate_class_a_manifest`, `validate_class_c_manifest`, `validate_semantic_manifest`, and `validate_durable_manifest` defined across lines 1-218 of `manifest.py` are not imported or called from any other file in the audited file list. A search of the audited surface for any of these function names returns zero hits outside the defining module. The manifest validation logic — which is precisely the guard functionality needed to enforce per-class evidence requirements — is therefore permanently inactive. Guard runs never invoke it, meaning Class A, C, semantic, and durable evidence is never validated against manifest content.",
+      "intent_mismatch": true,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F241",
+      "title": "ParsedSection.raw_start and raw_end are written but never read — dead state fields",
+      "location": "src/aiv/lib/parser.py:38",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "The `ParsedSection` dataclass declares `raw_start: int = 0` and `raw_end: int = 0` at lines 38-42. These fields are assigned during `_extract_sections` (lines 225, 234, 243) but are never accessed by any downstream parser method or external caller in the audited surface — only `level`, `title`, and `content` are consumed. The fields exist as dead state tracking that adds confusion about whether byte-offset tracking was planned but abandoned.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F242",
+      "title": "Empty bytes from tree-sitter node adds empty string to imported-symbols set — false-positive symbol matching",
+      "location": "src/aiv/lib/language_drivers/treesitter_driver.py:249",
+      "class": "logic-error",
+      "severity": "low",
+      "evidence": "In `_extract_named_imports` at line 249, when `len(names) >= 2` and `names[1].text` is falsy (empty bytes b''), `b''.decode('utf-8')` evaluates to `''` and the empty string is added to the `imports` set. Downstream in `find_covering_tests` and `find_downstream_callers`, the check `bare_name in imported_symbols` would match any symbol whose bare name is the empty string, which can occur for anonymous or malformed AST nodes, causing spurious false-positive coverage claims.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F243",
+      "title": "'import xdist as _' immediately discards the imported symbol — should use importlib.util.find_spec",
+      "location": "src/aiv/lib/evidence_collector.py:343",
+      "class": "dead-code",
+      "severity": "info",
+      "evidence": "Line 343 inside `collect_class_a` executes `import xdist as _` with a `# noqa: F401` comment. The sole purpose is to detect whether pytest-xdist is installed by catching `ImportError` on the surrounding try/except (lines 342-347). The `_` binding is immediately discarded. The idiomatic Python test for package presence without side effects is `importlib.util.find_spec('xdist') is not None`, which avoids actually importing the package (and its transitive dependencies) just to test for its existence. [runtime: evidence_collector.py:343 'import xdist as _' confirmed; the pattern is functionally correct (ImportError on absence triggers serial mode) but non-idiomatic. importlib.util.find_spec('xdist') is the conventional probe. The # noqa: F401 suppresses the linter but the pattern remains opaque.]",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F244",
+      "title": "Discarded subprocess result before filesystem assertion in test_cli_init.py",
+      "location": "tests/unit/test_cli_init.py:54-69,75-82,128-135,192-197",
+      "class": "resource/error-handling",
+      "severity": "medium",
+      "evidence": "Multiple test methods in TestInitCreatesDirectories, TestInitInstallsPreCommitHook, TestInitInstallsPrePushHook, and TestInitIdempotent call subprocess.run([sys.executable, '-m', 'aiv', 'init', ...]) and discard the return value (no assignment, no returncode check). Examples: test_creates_packets_dir (line 54-60), test_creates_evidence_dir (line 62-69), test_installs_pre_commit_hook (line 75-82), test_installs_pre_push_hook (line 128-135), test_double_init (line 221-228). If 'aiv init' exits non-zero, tests proceed and fail with a misleading 'directory does not exist' assertion rather than surfacing the actual subprocess failure.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F245",
+      "title": "Discarded _run_aiv_commit return value before asserting on generated evidence files",
+      "location": "tests/unit/test_cli_commit_skip.py:117-118,130-131",
+      "class": "resource/error-handling",
+      "severity": "medium",
+      "evidence": "In TestSkipReasonStampedInEvidence.test_reason_in_class_a (line 117) and test_reason_in_method (line 130), _run_aiv_commit() is called but its CompletedProcess return value is not assigned or inspected. If the command fails (non-zero exit), the test immediately proceeds to glob for EVIDENCE_*.md files in the evidence directory, finds zero, and fails with 'Expected 1 evidence file, got 0' — obscuring that the root cause was the aiv commit command failing. The helper at line 78-84 always returns the CompletedProcess but callers discard it.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F246",
+      "title": "test_functional_plus_packet_validates does not patch _load_hook_config, creating environment dependency",
+      "location": "tests/unit/test_pre_commit_hook.py:157-172",
+      "class": "resource/error-handling",
+      "severity": "medium",
+      "evidence": "The helper _mock_main (line 108-122) patches six symbols including 'aiv.hooks.pre_commit._load_hook_config'. TestRule2AtomicUnit.test_functional_plus_packet_validates (line 157-172) constructs its own with-block of five patches but omits the _load_hook_config patch. This causes pre_commit.main() to call the real _load_hook_config(), which reads .aiv.yml from os.getcwd(). If a custom .aiv.yml is present in the working directory at test time, functional_prefixes/functional_root_files differ from defaults, causing a non-deterministic test outcome. All other tests in the file route through _mock_main which consistently patches this function.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F247",
+      "title": "Overly broad patch of stdlib pathlib.Path.read_text in test_collect_new_file_fallback",
+      "location": "tests/unit/test_evidence_collector.py:100-101",
+      "class": "resource/error-handling",
+      "severity": "medium",
+      "evidence": "test_collect_new_file_fallback uses 'with patch(\"pathlib.Path.read_text\", return_value=\"line1\\nline2\\nline3\\n\"):' (line 100-101). This replaces the method on the stdlib Path class globally within the context, meaning any Path.read_text() call triggered anywhere in the call stack during collect_class_b (e.g., config reading, logging, other evidence collection internals) will silently return the three-line stub instead of real content. The correct target is the specific module-level usage; patching the class method is too broad and could suppress unrelated I/O errors in the SUT.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F248",
+      "title": "Non-top-level import placed after class definitions in test_svp.py",
+      "location": "tests/unit/test_svp.py:676",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "Line 676 contains 'from aiv.svp.lib.rating import calculate_rating, score_session' inserted between the TestSessionType class (ends around line 669) and TestScoreSession class (starts line 679). This import appears at module scope but after several class definitions, violating PEP 8 E402. More critically, if the import fails (e.g., aiv.svp.lib.rating is absent), Python raises ImportError mid-collection after earlier test classes have been collected, causing confusing partial-collection failures instead of a clean collection error at the top of the file.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F249",
+      "title": "Redundant IntentSection re-import inside fixture in test_validators.py",
+      "location": "tests/unit/test_validators.py:394",
+      "class": "dead-code",
+      "severity": "low",
+      "evidence": "The _make_packet_with_url fixture (line 392-417) contains 'from aiv.lib.models import ArtifactLink, IntentSection' at line 394. IntentSection is already imported at module level (line 21: 'from aiv.lib.models import (... IntentSection ...)'), making the second import of IntentSection inside the fixture a dead re-import. ArtifactLink is missing from the module-level import and is therefore locally imported here (line 394) and again inside test_audit_links_deduplicates_urls (line 502), resulting in duplicated inline imports across the file that should be consolidated at the module level.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F250",
+      "title": "try/except at module level catches only ImportError, leaving AttributeError unhandled during driver capability probe",
+      "location": "tests/unit/test_language_drivers.py:90-95",
+      "class": "resource/error-handling",
+      "severity": "low",
+      "evidence": "Lines 90-95 guard the TreeSitterDriver availability check with a bare 'except ImportError'. The expression 'TreeSitterDriver().available' first constructs a driver instance (which may raise AttributeError, RuntimeError, or OSError if tree-sitter native libraries are partially installed or corrupted) and then accesses '.available'. Only ImportError is caught; any other exception propagates out of module initialization and causes a pytest collection error rather than a graceful skip, defeating the purpose of the guard.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    },
+    {
+      "id": "F251",
+      "title": "Inline __import__(\"os\") used instead of top-level import in integration test helper",
+      "location": "tests/integration/test_svp_full_workflow.py:51",
+      "class": "dead-code",
+      "severity": "info",
+      "evidence": "The _run helper method (line 43-61) constructs the subprocess env dict with 'env={**__import__(\"os\").environ, ...}' at line 51. The 'os' module is never imported at the top of the file; the __import__ builtin is used inline to avoid a module-level import. This is non-idiomatic Python that obscures the dependency on the os module. While functionally equivalent, it makes static analysis and import tracking harder and is the only instance of __import__() use across all audited test files.",
+      "intent_mismatch": false,
+      "status": "verified",
+      "runtime_confirmed": true
+    }
+  ],
+  "rounds": 4,
+  "by_severity": {
+    "medium": 108,
+    "info": 15,
+    "low": 90,
+    "high": 36,
+    "critical": 2
+  },
+  "backprop": 306
+}
+```
