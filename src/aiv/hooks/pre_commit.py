@@ -146,7 +146,14 @@ def _write_safety_snapshot(repo_root: Path) -> None:
 
 
 def _validate_packet(packet_path: str) -> bool:
-    """Validate a staged packet using ``aiv check`` (non-strict) and ``aiv audit``."""
+    """Validate a staged packet using ``aiv check`` (non-strict) and ``aiv audit``.
+
+    Fails CLOSED: any error during validation BLOCKS the commit (returns False). A
+    crashed or unavailable validator must never let an unverified packet through -
+    a silent pass is an enforcement bypass. Temp artifacts are always cleaned up.
+    """
+    tmp_path: str | None = None
+    audit_dir: str | None = None
     try:
         staged_content = _run_git("show", f":{packet_path}")
         if not staged_content:
@@ -176,7 +183,6 @@ def _validate_packet(packet_path: str) -> bool:
             print()
             print("Fix the packet errors before committing.")
             print("=" * 79)
-            Path(tmp_path).unlink(missing_ok=True)
             return False
 
         # --- aiv audit (catches FIX_NO_CLASS_F, TODO remnants, etc.) ---
@@ -190,9 +196,6 @@ def _validate_packet(packet_path: str) -> bool:
             text=True,
             timeout=60,
         )
-
-        shutil.rmtree(audit_dir, ignore_errors=True)
-        Path(tmp_path).unlink(missing_ok=True)
 
         if audit_result.returncode != 0:
             print()
@@ -210,8 +213,20 @@ def _validate_packet(packet_path: str) -> bool:
 
         return True
     except Exception as exc:
-        print(f"WARNING: Packet validation skipped ({exc})")
-        return True
+        # FAIL CLOSED: a validation error blocks the commit, it never skips it.
+        print()
+        print("[BLOCK] PACKET VALIDATION ERROR")
+        print("=" * 79)
+        print(f"Packet validation could not complete ({exc}).")
+        print("Failing closed: the commit is blocked because the packet could NOT be verified.")
+        print("Fix the environment (e.g. make `aiv` importable) or the packet, then retry.")
+        print("=" * 79)
+        return False
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
+        if audit_dir:
+            shutil.rmtree(audit_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
