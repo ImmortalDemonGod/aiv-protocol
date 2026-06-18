@@ -17,6 +17,7 @@ from aiv.hooks.pre_commit import (
     _is_packet,
     _is_submodule_path,
     _load_hook_config,
+    _validate_packet,
     main,
 )
 
@@ -364,3 +365,44 @@ class TestLoadHookConfig:
         prefixes, root_files = _load_hook_config()
         assert prefixes == _DEFAULT_FUNCTIONAL_PREFIXES
         assert "s" not in prefixes
+
+
+# ---------------------------------------------------------------------------
+# F43 / F113 - fail-closed packet validation (regression: exception != skip)
+# ---------------------------------------------------------------------------
+
+
+class TestValidatePacketFailsClosed:
+    """F43: an exception inside _validate_packet must BLOCK the commit, not skip it.
+
+    The pre-fix code did ``except Exception: return True``, so a crashed validator
+    (aiv check missing, git failure, tempfile error) silently passed the commit -
+    the enforcement gate failed OPEN. The gate must fail CLOSED.
+    """
+
+    def test_validate_packet_returns_false_on_internal_exception(self) -> None:
+        # The first thing _validate_packet does is _run_git("show", ...); force it to raise.
+        with patch(
+            "aiv.hooks.pre_commit._run_git",
+            side_effect=RuntimeError("forced validation crash"),
+        ):
+            assert _validate_packet(".github/aiv-packets/VERIFICATION_PACKET_X.md") is False
+
+    def test_main_blocks_commit_when_validation_raises(self) -> None:
+        # Goal condition (F43 recipe): a forced exception inside _validate_packet
+        # makes main() block the commit with a non-zero exit.
+        staged = ["src/aiv/cli/main.py", ".github/aiv-packets/VERIFICATION_PACKET_X.md"]
+        with (
+            patch("aiv.hooks.pre_commit._staged_files", return_value=staged),
+            patch("aiv.hooks.pre_commit._write_safety_snapshot"),
+            patch("aiv.hooks.pre_commit._get_submodule_paths", return_value=[]),
+            patch(
+                "aiv.hooks.pre_commit._load_hook_config",
+                return_value=(_DEFAULT_FUNCTIONAL_PREFIXES, _DEFAULT_FUNCTIONAL_ROOT_FILES),
+            ),
+            patch(
+                "aiv.hooks.pre_commit._run_git",
+                side_effect=RuntimeError("forced validation crash"),
+            ),
+        ):
+            assert main() == 1
