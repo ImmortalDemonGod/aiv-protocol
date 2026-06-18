@@ -1,0 +1,286 @@
+[2026-06-17 19:12:19] → preflight (attempt 1/1) model=haiku
+[2026-06-17 19:12:31] preflight OK — agent path verified
+[2026-06-17 19:12:31] forensic-audit (consolidated) on claude/eloquent-goodall-sqfrhf — cost tracked, never gated (subscription)
+[2026-06-17 19:12:31] → s1:classify:0 (attempt 1/3) model=sonnet
+[2026-06-17 19:12:31] → s1:classify:1 (attempt 1/3) model=sonnet
+[2026-06-17 19:12:31] → s1:classify:2 (attempt 1/3) model=sonnet
+[2026-06-17 19:12:31] → s1:classify:3 (attempt 1/3) model=sonnet
+[2026-06-17 19:13:19] → s1:classify:4 (attempt 1/3) model=sonnet
+[2026-06-17 19:16:33] → s1:synth (attempt 1/3) model=opus
+[2026-06-17 19:17:00] → s1:falsify (attempt 1/3) model=opus
+[2026-06-17 19:19:15] s1 falsifier corrected 5 roles, +4 entry points
+[2026-06-17 19:19:46] WARN push failed after retries
+[2026-06-17 19:19:46] → s2:audit:1:0 (attempt 1/3) model=sonnet
+[2026-06-17 19:19:46] → s2:audit:1:1 (attempt 1/3) model=sonnet
+[2026-06-17 19:19:46] → s2:audit:1:2 (attempt 1/3) model=sonnet
+[2026-06-17 19:19:46] → s2:audit:1:3 (attempt 1/3) model=sonnet
+[2026-06-17 19:24:04] → s2:audit:1:4 (attempt 1/3) model=sonnet
+[2026-06-17 19:25:54]   schema errs: $.findings[0].intent_mismatch: expected boolean, got string; $.findings[1].intent_mismatch: expected boolean, got string; $.findings[2].intent_mismatch: expected boolean, got string
+[2026-06-17 19:25:54] → s2:audit:1:2 (attempt 2/3) model=sonnet
+[2026-06-17 19:27:29] → s2:audit:1:5 (attempt 1/3) model=sonnet
+[2026-06-17 19:29:09] → s2:audit:1:6 (attempt 1/3) model=sonnet
+[2026-06-17 19:29:42] → s2:audit:1:7 (attempt 1/3) model=sonnet
+[2026-06-17 19:35:11]   schema errs: $.findings[0].intent_mismatch: expected boolean, got string; $.findings[1].intent_mismatch: expected boolean, got string; $.findings[2].intent_mismatch: expected boolean, got string
+[2026-06-17 19:35:11] → s2:audit:1:6 (attempt 2/3) model=sonnet
+[2026-06-17 19:47:29]   no/!json handoff (attempt 1)
+[2026-06-17 19:47:32] → s2:audit:1:5 (attempt 2/3) model=sonnet
+[2026-06-17 19:52:30] → s2:falsify:1:0 (attempt 1/3) model=opus
+[2026-06-17 19:52:30] → s2:falsify:1:1 (attempt 1/3) model=opus
+[2026-06-17 19:52:30] → s2:falsify:1:2 (attempt 1/3) model=opus
+[2026-06-17 19:58:40] s2 round 1: 70 findings, 70 verified, +70 new, 5 refuted
+[2026-06-17 19:58:40] → s2:audit:2:0 (attempt 1/3) model=sonnet
+[2026-06-17 19:58:40] → s2:audit:2:1 (attempt 1/3) model=sonnet
+[2026-06-17 19:58:40] → s2:audit:2:2 (attempt 1/3) model=sonnet
+[2026-06-17 19:58:40] → s2:audit:2:3 (attempt 1/3) model=sonnet
+[2026-06-17 20:02:34] → s2:audit:2:4 (attempt 1/3) model=sonnet
+[2026-06-17 20:05:15] → s2:audit:2:5 (attempt 1/3) model=sonnet
+[2026-06-17 20:05:45] → s2:audit:2:6 (attempt 1/3) model=sonnet
+[2026-06-17 20:07:04]   schema errs: $.findings[0].intent_mismatch: expected boolean, got string; $.findings[1].intent_mismatch: expected boolean, got string; $.findings[2].intent_mismatch: expected boolean, got string
+[2026-06-17 20:07:04] → s2:audit:2:4 (attempt 2/3) model=sonnet
+[2026-06-17 20:07:26] → s2:audit:2:7 (attempt 1/3) model=sonnet
+[2026-06-17 20:13:41]   schema errs: $.findings[2].intent_mismatch: expected boolean, got string; $.findings[3].intent_mismatch: expected boolean, got string; $.findings[8].intent_mismatch: expected boolean, got string
+[2026-06-17 20:13:41] → s2:audit:2:6 (attempt 2/3) model=sonnet
+[2026-06-17 20:17:16] → s2:falsify:2:0 (attempt 1/3) model=opus
+[2026-06-17 20:17:16] → s2:falsify:2:1 (attempt 1/3) model=opus
+[2026-06-17 20:17:16] → s2:falsify:2:2 (attempt 1/3) model=opus
+[2026-06-17 20:17:16] → s2:falsify:2:3 (attempt 1/3) model=opus
+[2026-06-17 20:20:33] → s2:falsify:2:4 (attempt 1/3) model=opus
+[2026-06-17 20:21:37] → s2:falsify:2:5 (attempt 1/3) model=opus
+[2026-06-17 20:25:06] s2 round 2: 131 findings, 131 verified, +63 new, 3 refuted
+[2026-06-17 20:25:06] → s2:audit:3:0 (attempt 1/3) model=sonnet
+[2026-06-17 20:25:06] → s2:audit:3:1 (attempt 1/3) model=sonnet
+[2026-06-17 20:25:06] → s2:audit:3:2 (attempt 1/3) model=sonnet
+[2026-06-17 20:25:06] → s2:audit:3:3 (attempt 1/3) model=sonnet
+[2026-06-17 20:29:52] → s2:audit:3:4 (attempt 1/3) model=sonnet
+[2026-06-17 20:30:02] → s2:audit:3:5 (attempt 1/3) model=sonnet
+[2026-06-17 20:34:40] → s2:audit:3:6 (attempt 1/3) model=sonnet
+[2026-06-17 20:35:27] → s2:audit:3:7 (attempt 1/3) model=sonnet
+[2026-06-17 20:43:49]   schema errs: $.findings[0].location: required; $.findings[0].class: required; $.findings[0].evidence: required
+[2026-06-17 20:43:49] → s2:audit:3:6 (attempt 2/3) model=sonnet
+[2026-06-17 20:45:06]   no/!json handoff (attempt 1)
+[2026-06-17 20:45:09] → s2:audit:3:1 (attempt 2/3) model=sonnet
+[2026-06-17 20:53:48] → s2:falsify:3:0 (attempt 1/3) model=opus
+[2026-06-17 20:53:48] → s2:falsify:3:1 (attempt 1/3) model=opus
+[2026-06-17 20:53:48] → s2:falsify:3:2 (attempt 1/3) model=opus
+[2026-06-17 20:53:48] → s2:falsify:3:3 (attempt 1/3) model=opus
+[2026-06-17 20:57:01] → s2:falsify:3:4 (attempt 1/3) model=opus
+[2026-06-17 20:57:24] → s2:falsify:3:5 (attempt 1/3) model=opus
+[2026-06-17 20:57:29] → s2:falsify:3:6 (attempt 1/3) model=opus
+[2026-06-17 20:57:35] → s2:falsify:3:7 (attempt 1/3) model=opus
+[2026-06-17 21:03:53] s2 round 3: 186 findings, 186 verified, +55 new, 3 refuted
+[2026-06-17 21:03:53] → s2:audit:4:0 (attempt 1/3) model=sonnet
+[2026-06-17 21:03:53] → s2:audit:4:1 (attempt 1/3) model=sonnet
+[2026-06-17 21:03:53] → s2:audit:4:2 (attempt 1/3) model=sonnet
+[2026-06-17 21:03:53] → s2:audit:4:3 (attempt 1/3) model=sonnet
+[2026-06-17 21:09:35]   schema errs: $.findings[0].intent_mismatch: expected boolean, got string; $.findings[1].intent_mismatch: expected boolean, got string; $.findings[2].intent_mismatch: expected boolean, got string
+[2026-06-17 21:09:35] → s2:audit:4:0 (attempt 2/3) model=sonnet
+[2026-06-17 21:10:21]   schema errs: $.findings[0].intent_mismatch: expected boolean, got string; $.findings[1].intent_mismatch: expected boolean, got object; $.findings[2].intent_mismatch: expected boolean, got object
+[2026-06-17 21:10:21] → s2:audit:4:2 (attempt 2/3) model=sonnet
+[2026-06-17 21:11:51]   no/!json handoff (attempt 1)
+[2026-06-17 21:11:54] → s2:audit:4:1 (attempt 2/3) model=sonnet
+[2026-06-17 21:13:10] → s2:audit:4:4 (attempt 1/3) model=sonnet
+[2026-06-17 21:17:06] → s2:audit:4:5 (attempt 1/3) model=sonnet
+[2026-06-17 21:22:56] → s2:audit:4:6 (attempt 1/3) model=sonnet
+[2026-06-17 21:23:53]   no/!json handoff (attempt 1)
+[2026-06-17 21:23:56] → s2:audit:4:3 (attempt 2/3) model=sonnet
+[2026-06-17 21:24:43]   no/!json handoff (attempt 1)
+[2026-06-17 21:24:46] → s2:audit:4:4 (attempt 2/3) model=sonnet
+[2026-06-17 21:28:42] → s2:audit:4:7 (attempt 1/3) model=sonnet
+[2026-06-17 21:37:06]   no/!json handoff (attempt 1)
+[2026-06-17 21:37:09] → s2:audit:4:5 (attempt 2/3) model=sonnet
+[2026-06-17 21:40:51] → s2:falsify:4:0 (attempt 1/3) model=opus
+[2026-06-17 21:40:51] → s2:falsify:4:1 (attempt 1/3) model=opus
+[2026-06-17 21:40:51] → s2:falsify:4:2 (attempt 1/3) model=opus
+[2026-06-17 21:40:51] → s2:falsify:4:3 (attempt 1/3) model=opus
+[2026-06-17 21:43:59] → s2:falsify:4:4 (attempt 1/3) model=opus
+[2026-06-17 21:44:25] → s2:falsify:4:5 (attempt 1/3) model=opus
+[2026-06-17 21:44:51] → s2:falsify:4:6 (attempt 1/3) model=opus
+[2026-06-17 21:44:54] → s2:falsify:4:7 (attempt 1/3) model=opus
+[2026-06-17 21:47:17] → s2:falsify:4:8 (attempt 1/3) model=opus
+[2026-06-17 21:48:36] → s2:falsify:4:9 (attempt 1/3) model=opus
+[2026-06-17 21:48:40] → s2:falsify:4:10 (attempt 1/3) model=opus
+[2026-06-17 21:52:46] s2 round 4: 251 findings, 250 verified, +66 new, 4 refuted
+[2026-06-17 21:52:46] → s2:audit:5:0 (attempt 1/3) model=sonnet
+[2026-06-17 21:52:46] → s2:audit:5:1 (attempt 1/3) model=sonnet
+[2026-06-17 21:52:46] → s2:audit:5:2 (attempt 1/3) model=sonnet
+[2026-06-17 21:52:46] → s2:audit:5:3 (attempt 1/3) model=sonnet
+[2026-06-17 21:56:14]   no/!json handoff (attempt 1)
+[2026-06-17 21:56:17] → s2:audit:5:2 (attempt 2/3) model=sonnet
+[2026-06-17 21:56:18]   no/!json handoff (attempt 2)
+[2026-06-17 21:56:24] → s2:audit:5:2 (attempt 3/3) model=sonnet
+[2026-06-17 21:56:25]   no/!json handoff (attempt 3)
+[2026-06-17 21:56:34] → s2:audit:5:4 (attempt 1/3) model=sonnet
+[2026-06-17 21:56:36]   no/!json handoff (attempt 1)
+[2026-06-17 21:56:39] → s2:audit:5:4 (attempt 2/3) model=sonnet
+[2026-06-17 21:56:40]   no/!json handoff (attempt 2)
+[2026-06-17 21:56:46] → s2:audit:5:4 (attempt 3/3) model=sonnet
+[2026-06-17 21:56:47]   no/!json handoff (attempt 3)
+[2026-06-17 21:56:56] → s2:audit:5:5 (attempt 1/3) model=sonnet
+[2026-06-17 21:56:56]   no/!json handoff (attempt 1)
+[2026-06-17 21:56:57]   no/!json handoff (attempt 1)
+[2026-06-17 21:56:59] → s2:audit:5:0 (attempt 2/3) model=sonnet
+[2026-06-17 21:57:00] → s2:audit:5:5 (attempt 2/3) model=sonnet
+[2026-06-17 21:57:01]   no/!json handoff (attempt 2)
+[2026-06-17 21:57:02]   no/!json handoff (attempt 2)
+[2026-06-17 21:57:07] → s2:audit:5:0 (attempt 3/3) model=sonnet
+[2026-06-17 21:57:08] → s2:audit:5:5 (attempt 3/3) model=sonnet
+[2026-06-17 21:57:08]   no/!json handoff (attempt 3)
+[2026-06-17 21:57:09]   no/!json handoff (attempt 3)
+[2026-06-17 21:57:17] → s2:audit:5:6 (attempt 1/3) model=sonnet
+[2026-06-17 21:57:18] → s2:audit:5:7 (attempt 1/3) model=sonnet
+[2026-06-17 21:57:18]   no/!json handoff (attempt 1)
+[2026-06-17 21:57:20]   no/!json handoff (attempt 1)
+[2026-06-17 21:57:21] → s2:audit:5:6 (attempt 2/3) model=sonnet
+[2026-06-17 21:57:23] → s2:audit:5:7 (attempt 2/3) model=sonnet
+[2026-06-17 21:57:23]   no/!json handoff (attempt 2)
+[2026-06-17 21:57:25]   no/!json handoff (attempt 2)
+[2026-06-17 21:57:29] → s2:audit:5:6 (attempt 3/3) model=sonnet
+[2026-06-17 21:57:30]   no/!json handoff (attempt 3)
+[2026-06-17 21:57:31] → s2:audit:5:7 (attempt 3/3) model=sonnet
+[2026-06-17 21:57:32]   no/!json handoff (attempt 3)
+[2026-06-17 21:58:43]   no/!json handoff (attempt 1)
+[2026-06-17 21:58:46] → s2:audit:5:1 (attempt 2/3) model=sonnet
+[2026-06-17 21:58:47]   no/!json handoff (attempt 2)
+[2026-06-17 21:58:53] → s2:audit:5:1 (attempt 3/3) model=sonnet
+[2026-06-17 21:58:54]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:03] → s2:falsify:5:0 (attempt 1/3) model=opus
+[2026-06-17 21:59:03] → s2:falsify:5:1 (attempt 1/3) model=opus
+[2026-06-17 21:59:03] → s2:falsify:5:2 (attempt 1/3) model=opus
+[2026-06-17 21:59:03] → s2:falsify:5:3 (attempt 1/3) model=opus
+[2026-06-17 21:59:04]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:04]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:04]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:05]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:07] → s2:falsify:5:1 (attempt 2/3) model=opus
+[2026-06-17 21:59:07] → s2:falsify:5:2 (attempt 2/3) model=opus
+[2026-06-17 21:59:07] → s2:falsify:5:0 (attempt 2/3) model=opus
+[2026-06-17 21:59:08] → s2:falsify:5:3 (attempt 2/3) model=opus
+[2026-06-17 21:59:09]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:09]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:09]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:09]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:15] → s2:falsify:5:2 (attempt 3/3) model=opus
+[2026-06-17 21:59:15] → s2:falsify:5:0 (attempt 3/3) model=opus
+[2026-06-17 21:59:15] → s2:falsify:5:1 (attempt 3/3) model=opus
+[2026-06-17 21:59:15] → s2:falsify:5:3 (attempt 3/3) model=opus
+[2026-06-17 21:59:16]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:16]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:17]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:21]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:25] → s2:falsify:5:4 (attempt 1/3) model=opus
+[2026-06-17 21:59:25] → s2:falsify:5:5 (attempt 1/3) model=opus
+[2026-06-17 21:59:26] → s2:falsify:5:6 (attempt 1/3) model=opus
+[2026-06-17 21:59:26]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:27]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:27]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:30] → s2:falsify:5:5 (attempt 2/3) model=opus
+[2026-06-17 21:59:30] → s2:falsify:5:4 (attempt 2/3) model=opus
+[2026-06-17 21:59:30] → s2:falsify:5:6 (attempt 2/3) model=opus
+[2026-06-17 21:59:30] → s2:falsify:5:7 (attempt 1/3) model=opus
+[2026-06-17 21:59:31]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:31]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:32]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:32]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:35] → s2:falsify:5:7 (attempt 2/3) model=opus
+[2026-06-17 21:59:36]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:37] → s2:falsify:5:4 (attempt 3/3) model=opus
+[2026-06-17 21:59:37] → s2:falsify:5:6 (attempt 3/3) model=opus
+[2026-06-17 21:59:38] → s2:falsify:5:5 (attempt 3/3) model=opus
+[2026-06-17 21:59:38]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:39]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:39]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:42] → s2:falsify:5:7 (attempt 3/3) model=opus
+[2026-06-17 21:59:43]   no/!json handoff (attempt 3)
+[2026-06-17 21:59:47] → s2:falsify:5:8 (attempt 1/3) model=opus
+[2026-06-17 21:59:48] → s2:falsify:5:9 (attempt 1/3) model=opus
+[2026-06-17 21:59:48] → s2:falsify:5:10 (attempt 1/3) model=opus
+[2026-06-17 21:59:48]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:49]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:50]   no/!json handoff (attempt 1)
+[2026-06-17 21:59:51] → s2:falsify:5:8 (attempt 2/3) model=opus
+[2026-06-17 21:59:52] → s2:falsify:5:10 (attempt 2/3) model=opus
+[2026-06-17 21:59:53]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:53] → s2:falsify:5:9 (attempt 2/3) model=opus
+[2026-06-17 21:59:54]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:54]   no/!json handoff (attempt 2)
+[2026-06-17 21:59:59] → s2:falsify:5:8 (attempt 3/3) model=opus
+[2026-06-17 22:00:00] → s2:falsify:5:10 (attempt 3/3) model=opus
+[2026-06-17 22:00:00]   no/!json handoff (attempt 3)
+[2026-06-17 22:00:00] → s2:falsify:5:9 (attempt 3/3) model=opus
+[2026-06-17 22:00:01]   no/!json handoff (attempt 3)
+[2026-06-17 22:00:01]   no/!json handoff (attempt 3)
+[2026-06-17 22:00:41] WARN push failed after retries
+[2026-06-17 23:28:21] → preflight (attempt 1/1) model=haiku
+[2026-06-17 23:28:30] preflight OK — agent path verified
+[2026-06-17 23:28:30] forensic-audit (consolidated) on claude/eloquent-goodall-sqfrhf — cost tracked, never gated (subscription)
+[2026-06-17 23:28:30] → s2:audit:1:0 (attempt 1/3) model=sonnet
+[2026-06-17 23:28:30] → s2:audit:1:1 (attempt 1/3) model=sonnet
+[2026-06-17 23:28:30] → s2:audit:1:2 (attempt 1/3) model=sonnet
+[2026-06-17 23:28:30] → s2:audit:1:3 (attempt 1/3) model=sonnet
+[2026-06-17 23:31:19] → s2:audit:1:4 (attempt 1/3) model=sonnet
+[2026-06-17 23:33:07] → s2:audit:1:5 (attempt 1/3) model=sonnet
+[2026-06-17 23:35:41] → s2:audit:1:6 (attempt 1/3) model=sonnet
+[2026-06-17 23:38:59] → s2:audit:1:7 (attempt 1/3) model=sonnet
+[2026-06-17 23:40:22]   schema errs: $.findings[0].intent_mismatch: expected boolean, got string; $.findings[1].intent_mismatch: expected boolean, got string; $.findings[3].intent_mismatch: expected boolean, got string
+[2026-06-17 23:40:22] → s2:audit:1:6 (attempt 2/3) model=sonnet
+[2026-06-17 23:53:07]   no/!json handoff (attempt 1)
+[2026-06-17 23:53:10] → s2:audit:1:5 (attempt 2/3) model=sonnet
+[2026-06-17 23:57:08]   no/!json handoff (attempt 2)
+[2026-06-17 23:57:14] → s2:audit:1:5 (attempt 3/3) model=sonnet
+[2026-06-18 00:01:52] → s2:falsify:1:0 (attempt 1/3) model=opus
+[2026-06-18 00:01:52] → s2:falsify:1:1 (attempt 1/3) model=opus
+[2026-06-18 00:01:52] → s2:falsify:1:2 (attempt 1/3) model=opus
+[2026-06-18 00:01:52] → s2:falsify:1:3 (attempt 1/3) model=opus
+[2026-06-18 00:04:57] → s2:falsify:1:4 (attempt 1/3) model=opus
+[2026-06-18 00:05:17] → s2:falsify:1:5 (attempt 1/3) model=opus
+[2026-06-18 00:05:56] → s2:falsify:1:6 (attempt 1/3) model=opus
+[2026-06-18 00:07:14] → s2:falsify:1:7 (attempt 1/3) model=opus
+[2026-06-18 00:08:20] → s2:falsify:1:8 (attempt 1/3) model=opus
+[2026-06-18 00:09:41] → s2:falsify:1:9 (attempt 1/3) model=opus
+[2026-06-18 00:10:09] → s2:falsify:1:10 (attempt 1/3) model=opus
+[2026-06-18 00:10:39] → s2:falsify:1:11 (attempt 1/3) model=opus
+[2026-06-18 00:42:11] → preflight (attempt 1/1) model=haiku
+[2026-06-18 00:42:22] preflight OK — agent path verified
+[2026-06-18 00:42:22] forensic-audit (consolidated) on claude/eloquent-goodall-sqfrhf — cost tracked, never gated (subscription)
+[2026-06-18 00:42:22] → s3:discover (attempt 1/3) model=sonnet
+[2026-06-18 00:43:00] s3 run: pip install -e ".[dev]"
+[2026-06-18 00:43:16] s3 run: pytest
+[2026-06-18 00:43:17] s3 run: pytest --cov=aiv --cov-report=term-missing --junitxml=artifacts/junit.xml
+[2026-06-18 00:43:17] → s3:analyze (attempt 1/3) model=sonnet
+[2026-06-18 00:46:28] → preflight (attempt 1/1) model=haiku
+[2026-06-18 00:46:39] preflight OK — agent path verified
+[2026-06-18 00:46:39] forensic-audit (consolidated) on claude/eloquent-goodall-sqfrhf — cost tracked, never gated (subscription)
+[2026-06-18 00:46:39] → s3:discover (attempt 1/3) model=sonnet
+[2026-06-18 00:47:11] s3 run: pip install -e ".[dev]"
+[2026-06-18 00:47:14] s3 run: pytest --cov=aiv --cov-report=term-missing --junitxml=artifacts/junit.xml
+[2026-06-18 00:47:15] s3 run: pytest --cov=aiv --cov-report=term-missing --junitxml=artifacts/junit.xml
+[2026-06-18 00:47:15] → s3:analyze (attempt 1/3) model=sonnet
+[2026-06-18 01:07:15] → s3:verify (attempt 1/3) model=opus
+[2026-06-18 01:07:42] → s3:deep (attempt 1/3) model=sonnet
+[2026-06-18 01:20:53] → s3:account (attempt 1/3) model=sonnet
+[2026-06-18 01:23:19] s3 accounting flipped 1 of 1 un-executed regions
+[2026-06-18 01:23:19] s3 back-propagated 297 deltas into Stage 2 (251 survive)
+[2026-06-18 01:23:50] WARN push failed after retries
+[2026-06-18 01:23:50] → s4:goal (attempt 1/3) model=opus
+[2026-06-18 01:23:50] → s4:research:0 (attempt 1/3) model=sonnet
+[2026-06-18 01:23:50] → s4:research:1 (attempt 1/3) model=sonnet
+[2026-06-18 01:23:50] → s4:research:2 (attempt 1/3) model=sonnet
+[2026-06-18 01:27:42] → preflight (attempt 1/1) model=haiku
+[2026-06-18 01:27:51] preflight OK — agent path verified
+[2026-06-18 01:27:51] forensic-audit (consolidated) on claude/eloquent-goodall-sqfrhf — cost tracked, never gated (subscription)
+[2026-06-18 01:27:51] → s4:goal (attempt 1/3) model=opus
+[2026-06-18 01:27:51] → s4:research:0 (attempt 1/3) model=sonnet
+[2026-06-18 01:27:51] → s4:research:1 (attempt 1/3) model=sonnet
+[2026-06-18 01:27:51] → s4:research:2 (attempt 1/3) model=sonnet
+[2026-06-18 01:33:07] → s4:judge:0 (attempt 1/3) model=opus
+[2026-06-18 01:33:07] → s4:judge:1 (attempt 1/3) model=opus
+[2026-06-18 01:33:07] → s4:judge:2 (attempt 1/3) model=opus
+[2026-06-18 01:34:52] WARN push failed after retries
+[2026-06-18 01:34:52] → s5:plan:1 (attempt 1/3) model=opus
+[2026-06-18 01:43:07] → s5:map:1 (attempt 1/3) model=sonnet
+[2026-06-18 01:45:56] s5 not converged (attempt 1): ambiguous ["P67","P72","P77","P79"]
+[2026-06-18 01:45:56] → s5:plan:2 (attempt 1/3) model=opus
+[2026-06-18 01:48:16] → s5:map:2 (attempt 1/3) model=sonnet
+[2026-06-18 01:51:36] s5 not converged (attempt 2): ambiguous ["P77","P79"]
+[2026-06-18 01:52:06] WARN push failed after retries
+[2026-06-18 01:52:06] DONE — API-equiv ~$10.43 (informational; {"preflight":0.0161676,"s4":5.977568799999999,"s5":4.4358422})
