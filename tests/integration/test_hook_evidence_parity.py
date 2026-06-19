@@ -21,10 +21,12 @@ BASH_HOOK = Path(__file__).resolve().parents[2] / ".husky" / "pre-commit"
 
 
 def _git(repo: Path, *args: str) -> None:
+    """Run a git command in ``repo``, raising on failure."""
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
 
 
 def _make_repo(root: Path, staged: dict[str, str], active_change: bool = False) -> Path:
+    """Create a temp git repo with the husky hook installed and ``staged`` files staged."""
     repo = root / "repo"
     repo.mkdir(parents=True)
     _git(repo, "init")
@@ -46,18 +48,20 @@ def _make_repo(root: Path, staged: dict[str, str], active_change: bool = False) 
 
 
 def _env_with_aiv() -> dict[str, str]:
-    # Ensure the hook's `python`/`python3` resolves to the interpreter that has aiv installed.
+    """Return an env whose PATH front-loads the interpreter that has aiv installed."""
     env = dict(os.environ)
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     return env
 
 
 def _run_bash_hook(repo: Path) -> int:
+    """Run the bash `.husky/pre-commit` against the repo's staged set; return its exit code."""
     r = subprocess.run(["sh", ".husky/pre-commit"], cwd=str(repo), env=_env_with_aiv(), capture_output=True, text=True)
     return r.returncode
 
 
 def _run_python_hook(repo: Path) -> int:
+    """Run the Python hook directly against the repo's staged set; return its exit code."""
     r = subprocess.run(
         [sys.executable, "-m", "aiv.hooks.pre_commit"],
         cwd=str(repo),
