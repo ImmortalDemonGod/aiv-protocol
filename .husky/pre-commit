@@ -1,273 +1,33 @@
 #!/bin/sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-SNAP_ROOT="$REPO_ROOT/.cache/bb-safety-snapshots"
-SNAP_TS=$(date -u +%Y%m%d-%H%M%S 2>/dev/null || date +%Y%m%d-%H%M%S)
-SNAP_DIR="$SNAP_ROOT/$SNAP_TS-$$"
+# AIV atomic-commit gate.
+#
+# Single source of truth: the entire gate decision (atomicity rules, packet and
+# Layer-1 EVIDENCE recognition, change-context awareness, packet validation, and
+# the safety snapshot) is delegated to the authoritative, unit-tested Python hook
+# `aiv.hooks.pre_commit`. This file intentionally contains NO duplicated rule
+# logic. Past drift between this bash hook and the Python hook (the bash copy did
+# not recognize EVIDENCE_*.md and rejected `aiv commit` output) was exactly the
+# defect class AIV exists to police (forensic finding F96 / C2). One
+# implementation cannot drift from itself.
+#
+# Fails closed: if no Python interpreter is available, the gate blocks the commit
+# rather than skipping enforcement.
 
-mkdir -p "$SNAP_DIR" || {
-  echo "ERROR: failed to create safety snapshot directory: $SNAP_DIR" 1>&2
+if command -v python >/dev/null 2>&1; then
+  PY=python
+elif command -v python3 >/dev/null 2>&1; then
+  PY=python3
+else
+  echo "AIV gate: no python interpreter found; failing closed (commit blocked)." 1>&2
+  echo "  Install Python and aiv-protocol (pip install -e .) and retry." 1>&2
   exit 1
-}
-
-git status --porcelain=v1 > "$SNAP_DIR/status.txt" 2>/dev/null || {
-  echo "ERROR: failed to write safety snapshot status" 1>&2
-  exit 1
-}
-
-git diff > "$SNAP_DIR/diff.patch" 2>/dev/null || {
-  echo "ERROR: failed to write safety snapshot diff" 1>&2
-  exit 1
-}
-
-git diff --cached > "$SNAP_DIR/diff_cached.patch" 2>/dev/null || {
-  echo "ERROR: failed to write safety snapshot cached diff" 1>&2
-  exit 1
-}
-
-git ls-files --others --exclude-standard > "$SNAP_DIR/untracked_files.txt" 2>/dev/null || {
-  echo "ERROR: failed to write safety snapshot untracked file list" 1>&2
-  exit 1
-}
-
-if [ -s "$SNAP_DIR/untracked_files.txt" ]; then
-  UNTRACKED_DIR="$SNAP_DIR/untracked_files"
-  mkdir -p "$UNTRACKED_DIR"
-  COPY_OK=true
-  while IFS= read -r ufile; do
-    if [ -n "$ufile" ] && [ -f "$REPO_ROOT/$ufile" ]; then
-      udir=$(dirname "$ufile")
-      mkdir -p "$UNTRACKED_DIR/$udir" 2>/dev/null
-      cp "$REPO_ROOT/$ufile" "$UNTRACKED_DIR/$ufile" 2>/dev/null || {
-        COPY_OK=false
-      }
-    fi
-  done < "$SNAP_DIR/untracked_files.txt"
-  if [ "$COPY_OK" = false ]; then
-    echo "ERROR: failed to copy some untracked files into safety snapshot" 1>&2
-    exit 1
-  fi
 fi
 
-echo "Safety snapshot written to: $SNAP_DIR" 1>&2
+"$PY" -m aiv.hooks.pre_commit || exit 1
 
-# 1. Capture Staged State
-STAGED_LIST=$(git diff --cached --name-only)
-STAGED_COUNT=$(echo "$STAGED_LIST" | sed '/^$/d' | wc -l | tr -d ' ')
-
-# 2. Define Patterns
-PACKET_PATTERN="^\\.github/(aiv-packets/)?VERIFICATION_PACKET_.*\\.md$"
-HAS_PACKET=$(echo "$STAGED_LIST" | grep -E "$PACKET_PATTERN" || true)
-# Detects functional changes (src, engine, infrastructure, scripts, CI/workflows, or root config files)
-IS_FUNCTIONAL=$(echo "$STAGED_LIST" | grep -E "^(src/|engine/|infrastructure/|scripts/|tests/|\\.github/workflows/|\\.github/PULL_REQUEST_TEMPLATE\\.md|\\.husky/|astro\\.config\\.mjs|package\\.json|package-lock\\.json|tailwind\\.config\\.js|\\.gitignore|\\.env\\.example)" || true)
-HAS_AIV_PACKETS_GITKEEP=$(echo "$STAGED_LIST" | grep -E '^\\.github/aiv-packets/\\.gitkeep$' || true)
-HAS_GITMODULES=$(echo "$STAGED_LIST" | grep -E '^\\.gitmodules$' || true)
-HAS_SUBMODULE_PATH=""
-SUBMODULE_PATHS=$(git config -f .gitmodules --get-regexp path 2>/dev/null | awk '{print $2}')
-if [ -n "$SUBMODULE_PATHS" ]; then
-  while IFS= read -r path; do
-    if [ -n "$path" ] && echo "$STAGED_LIST" | grep -F -q "$path"; then
-      HAS_SUBMODULE_PATH="true"
-      break
-    fi
-  done <<EOF
-$SUBMODULE_PATHS
-EOF
-fi
-
-# 3. Cognitive Context Restoration (The Prompt Injection)
-print_aiv_rubric() {
-  echo ""
-  echo "🛑 AIV CUMULATIVE COMPLIANCE GATING (Shift-Left) 🛑"
-  echo "==============================================================================="
-  echo "ERROR: You modified code but did not update the Verification Packet."
-  echo "You must self-assess the Risk Tier and provide CUMULATIVE evidence."
-  echo ""
-  echo "📂 STAGED FILES DETECTED:"
-  echo "$STAGED_LIST"
-  echo ""
-  echo "⚖️  RISK CLASSIFICATION & EVIDENCE REQUIREMENTS:"
-  echo "-------------------------------------------------------------------------------"
-  echo "  [R3] HIGH RISK   : Auth, Crypto, Payments, PII, Audit Logs."
-  echo "                     👉 REQUIRES: A + B + C + E + [D + F]"
-  echo ""
-  echo "  [R2] MEDIUM RISK : Infrastructure, Config, Schema, Public APIs."
-  echo "                     👉 REQUIRES: [R1] + [C + E]"
-  echo ""
-  echo "  [R1] LOW RISK    : Standard Logic, Features, Bug Fixes."
-  echo "                     👉 REQUIRES: [A + B]"
-  echo "-------------------------------------------------------------------------------"
-  echo ""
-  echo "📋 EVIDENCE TAXONOMY REFERENCE:"
-  echo "  [Class A] Execution    : Logs/Screenshots proving it runs."
-  echo "  [Class B] Referential  : Commit-SHA permalinks to changed lines."
-  echo "  [Class C] Negative     : Proof that regressions are absent."
-  echo "  [Class D] Differential : Detailed Diff of API, State, or Config."
-  echo "  [Class E] Intent       : Link to the Spec/Issue (SHA-pinned)."
-  echo "  [Class F] Provenance   : Cryptographic hashes/signatures."
-  echo ""
-  echo "🤖 INSTRUCTION FOR AGENT:"
-  echo "1. Identify the Risk Tier for the staged files above."
-  echo "2. Generate ALL classes required for that tier (e.g., R3 needs A through F)."
-  echo "3. Update the .md packet in .github/ and 'git add' it."
-  echo "4. Retry commit."
-  echo "==============================================================================="
-}
-
-# --- PACKET VALIDATION ---
-# If a packet is staged, validate it with the real Python validator (aiv check).
-# This ensures the packet is structurally valid, not just present.
-validate_staged_packet() {
-    if [ -z "$HAS_PACKET" ]; then
-        return 0
-    fi
-
-    # Extract the packet file path from staged files
-    PACKET_FILE=$(echo "$STAGED_LIST" | grep -E "$PACKET_PATTERN" | head -n 1)
-    if [ -z "$PACKET_FILE" ]; then
-        return 0
-    fi
-
-    # Check if Python and aiv are available
-    if ! command -v python >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
-        echo "⚠️  WARNING: Python not found — skipping packet content validation." 1>&2
-        return 0
-    fi
-
-    PYTHON_CMD="python"
-    if ! command -v python >/dev/null 2>&1; then
-        PYTHON_CMD="python3"
-    fi
-
-    # Validate the staged version of the packet (not the working tree version)
-    PACKET_CONTENT=$(git show ":${PACKET_FILE}" 2>/dev/null)
-    if [ -z "$PACKET_CONTENT" ]; then
-        return 0
-    fi
-
-    # Write staged content to a temp file for validation
-    TMPFILE=$(mktemp "${TMPDIR:-/tmp}/aiv-packet-check.XXXXXX.md")
-    echo "$PACKET_CONTENT" > "$TMPFILE"
-
-    # Run aiv check (non-strict mode — warnings don't block)
-    RESULT=$($PYTHON_CMD -m aiv check "$TMPFILE" 2>&1) || {
-        # Check if the failure is from blocking errors (not just warnings)
-        BLOCKING=$(echo "$RESULT" | grep -c "blocking error" || true)
-        if echo "$RESULT" | grep -q "0 blocking error"; then
-            # Only warnings — allow commit (fall through to audit)
-            :
-        else
-            echo ""
-            echo "🛑 PACKET VALIDATION FAILED"
-            echo "==============================================================================="
-            echo "The staged verification packet failed content validation:"
-            echo ""
-            echo "$RESULT"
-            echo ""
-            echo "Fix the packet errors before committing."
-            echo "==============================================================================="
-            rm -f "$TMPFILE"
-            return 1
-        fi
-    }
-
-    # Run aiv audit on the staged packet (catches FIX_NO_CLASS_F, TODO remnants, etc.)
-    PACKET_BASENAME=$(basename "$PACKET_FILE")
-    AUDIT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/aiv-audit-check.XXXXXX")
-    cp "$TMPFILE" "$AUDIT_DIR/$PACKET_BASENAME"
-
-    AUDIT_RESULT=$($PYTHON_CMD -m aiv audit "$AUDIT_DIR" 2>&1)
-    AUDIT_EXIT=$?
-    rm -rf "$AUDIT_DIR"
-
-    if [ "$AUDIT_EXIT" -ne 0 ]; then
-        echo ""
-        echo "🛑 PACKET AUDIT FAILED"
-        echo "==============================================================================="
-        echo "The staged verification packet has quality issues:"
-        echo ""
-        echo "$AUDIT_RESULT"
-        echo ""
-        echo "Fix the audit errors before committing."
-        echo "==============================================================================="
-        rm -f "$TMPFILE"
-        return 1
-    fi
-
-    rm -f "$TMPFILE"
-    return 0
-}
-
-# --- ATOMICITY RULES ---
-
-# Rule 1: Dependency Pair Exception
-if [ "$STAGED_COUNT" -eq 2 ]; then
-    SORTED=$(echo "$STAGED_LIST" | sort | tr '\n' ' ' | sed 's/ $//')
-    if [ "$SORTED" = "package-lock.json package.json" ]; then
-        exit 0
-    fi
-fi
-
-# Rule 2: The AIV Atomic Unit (Allow 1 Functional File + 1 Packet)
-if [ "$STAGED_COUNT" -eq 2 ] && [ -n "$HAS_PACKET" ] && [ -n "$IS_FUNCTIONAL" ]; then
-    validate_staged_packet || exit 1
-    exit 0
-fi
-
-# Rule 2.5: Packet directory tracking file may be committed with a packet
-if [ "$STAGED_COUNT" -eq 2 ] && [ -n "$HAS_PACKET" ] && [ -n "$HAS_AIV_PACKETS_GITKEEP" ]; then
-    validate_staged_packet || exit 1
-    exit 0
-fi
-
-# Rule 2.6: Submodule update (Allow 1 submodule path + 1 Packet)
-if [ "$STAGED_COUNT" -eq 2 ] && [ -n "$HAS_PACKET" ] && [ -n "$HAS_SUBMODULE_PATH" ]; then
-    validate_staged_packet || exit 1
-    exit 0
-fi
-
-# Rule 2.7: Submodule add (Allow .gitmodules + submodule path + 1 Packet)
-if [ "$STAGED_COUNT" -eq 3 ] && [ -n "$HAS_PACKET" ] && [ -n "$HAS_GITMODULES" ] && [ -n "$HAS_SUBMODULE_PATH" ]; then
-    validate_staged_packet || exit 1
-    exit 0
-fi
-
-# Rule 3: Packet-Only Update (Allow 1 file if it's the packet)
-if [ "$STAGED_COUNT" -eq 1 ] && [ -n "$HAS_PACKET" ]; then
-    validate_staged_packet || exit 1
-    exit 0
-fi
-
-# Rule 4: Strict Atomic Violation (Too many files)
-if [ "$STAGED_COUNT" -gt 2 ]; then
-    echo "🛑 REJECTION: Atomic Commit Policy Violated ($STAGED_COUNT files staged)."
-    echo "This repository enforces: 1 Functional File + 1 Verification Packet per commit."
-    echo ""
-    echo "Staged files:"
-    echo "$STAGED_LIST"
-    exit 1
-fi
-
-# Rule 5: Code without Evidence (The Trap)
-if [ -n "$IS_FUNCTIONAL" ] && [ -z "$HAS_PACKET" ]; then
-    print_aiv_rubric
-    exit 1
-fi
-
-# Rule 6: Any remaining 2-file combination is forbidden
-if [ "$STAGED_COUNT" -eq 2 ]; then
-    echo "🛑 REJECTION: Atomic Commit Policy Violated (2 files staged)."
-    echo "Allowed 2-file commits are:"
-    echo "  - package.json + package-lock.json"
-    echo "  - 1 functional file + 1 Verification Packet"
-    echo ""
-    echo "Staged files:"
-    echo "$STAGED_LIST"
-    exit 1
-fi
-
-# Run lint-staged for valid commits
+# Run lint-staged for valid commits.
 if [ -f "package.json" ]; then
   if [ -f "./node_modules/lint-staged/bin/lint-staged.js" ] && command -v node >/dev/null 2>&1; then
     node ./node_modules/lint-staged/bin/lint-staged.js
