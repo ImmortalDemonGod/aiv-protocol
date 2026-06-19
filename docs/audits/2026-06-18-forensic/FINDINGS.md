@@ -6,7 +6,9 @@ it does not add, soften, or invent findings. Every issue here traces back to one
 finding IDs in [`raw/stage2.json.md`](raw/stage2.json.md), and the clustering is reproducible from
 [`raw/distinct-issues.json.md`](raw/distinct-issues.json.md)._
 
-> **No fixes are applied in this PR.** This is a record-and-triage deliverable only.
+> The original audit (PR #9) applied **no fixes**; it was a record-and-triage deliverable.
+> Remediation status is tracked **inline per finding** as fixes land in follow-up PRs (see the
+> `Remediation:` / `✅ fixed` markers below).
 
 ---
 
@@ -79,6 +81,12 @@ pipeline)** and were not independently re-executed for this PR; they are flagged
   CLI stages packets the bash hook will not classify as packets. The three surfaces disagree on
   what *is* a packet → bypass gaps depending on which gate runs.
 - **Plan ref:** P2 (shared prefix module) + P3 (bring husky to parity / delegate to Python hook).
+- **Remediation:** ✅ FIXED (`fix/f96-husky-delegates-to-python`) via P3. The bash `.husky/pre-commit`
+  (285 lines) now DELEGATES the gate to the authoritative Python hook (`python -m aiv.hooks.pre_commit`,
+  44 lines); the duplicated rule engine is deleted, so the two surfaces are one implementation and
+  cannot drift. Pins it: `tests/integration/test_hook_evidence_parity.py` (source + EVIDENCE accepted by
+  both hooks; parity; deny-path conserved). Evidence: `VERIFICATION_PACKET_F96_HUSKY_DELEGATION.md`.
+  Also closes **H3c / F210** (husky pattern divergence).
 
 ---
 
@@ -109,7 +117,7 @@ Grouped by root cause; cross-file duplicates of one root cause are merged.
 |---|---|---|---|---|
 | H3 | R1 rubric documents `{A,B}` while pipeline enforces `{A,B,E}` | `lib/validators/pipeline.py:183` | F159, F23, F24 | ✅ source |
 | H3b | R3 rubric brackets D and F as optional; pipeline enforces all six | `hooks/pre_commit.py:237` | F24 | audit-asserted |
-| H3c | husky `PACKET_PATTERN` omits Layer-1 `EVIDENCE_*.md`, diverging from Python hook | `.husky/pre-commit:61` | F210 | ✅ source (see C2) |
+| H3c | husky `PACKET_PATTERN` omits Layer-1 `EVIDENCE_*.md`, diverging from Python hook | `.husky/pre-commit:61` | F210 | ✅ fixed with C2 (husky now delegates to the Python hook) |
 
 > P1 in the plan unifies all tier-drift findings (F23/F24/F159/F212/F228/F229/F41/F112) behind a
 > single canonical `_TIER_REQUIRED` map. Treat H3/H3b/H3c as one work item.
