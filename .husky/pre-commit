@@ -15,10 +15,10 @@
 # Fails closed: if no Python interpreter is available, the gate blocks the commit
 # rather than skipping enforcement.
 
-if command -v python >/dev/null 2>&1; then
-  PY=python
-elif command -v python3 >/dev/null 2>&1; then
+if command -v python3 >/dev/null 2>&1; then
   PY=python3
+elif command -v python >/dev/null 2>&1; then
+  PY=python
 else
   echo "AIV gate: no python interpreter found; failing closed (commit blocked)." 1>&2
   echo "  Install Python and aiv-protocol (pip install -e .) and retry." 1>&2
