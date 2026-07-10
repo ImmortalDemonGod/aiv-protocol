@@ -50,9 +50,10 @@ class ValidationPipeline:
     2. Structure - Validate packet structure completeness
     3. Links - Validate URL immutability
     4. Evidence - Validate evidence class requirements
-    5. Zero-Touch - Validate reproduction instructions
-    6. Anti-Cheat - Scan diff for test manipulation
-    7. Cross-Reference - Ensure anti-cheat findings are justified
+    5. Risk-Tier - Validate required evidence classes per risk tier
+    6. Zero-Touch - Validate reproduction instructions
+    7. Anti-Cheat - Scan diff for test manipulation
+    8. Cross-Reference - Ensure anti-cheat findings are justified
     """
 
     def __init__(self, config: AIVConfig | None = None, *, audit_links: bool = False):

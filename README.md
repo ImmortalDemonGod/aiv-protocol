@@ -603,7 +603,7 @@ aiv-protocol/
 │   │       └── validators/
 │   │           └── session.py       # Session rules S001–S016
 │   └── __main__.py                  # python -m aiv support
-├── tests/                           # 370+ tests (unit + integration)
+├── tests/                           # 580+ tests (unit + integration)
 │   ├── unit/
 │   │   ├── test_models.py
 │   │   ├── test_parser.py

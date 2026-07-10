@@ -1,7 +1,7 @@
 """
 aiv/svp/lib/validators/session.py
 
-SVP session validator — orchestrates validation of all phases (S001-S013).
+SVP session validator — orchestrates validation of all phases (S001-S016).
 """
 
 from __future__ import annotations
