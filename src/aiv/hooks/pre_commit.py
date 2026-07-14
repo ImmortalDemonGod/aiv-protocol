@@ -155,12 +155,12 @@ def _validate_packet(packet_path: str) -> bool:
     tmp_path: str | None = None
     audit_dir: str | None = None
     try:
-        staged_content = _run_git("show", f":{packet_path}")
-        if not staged_content:
+        staged_packet_content = _run_git("show", f":{packet_path}")
+        if not staged_packet_content:
             return True
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as tmp:
-            tmp.write(staged_content)
+            tmp.write(staged_packet_content)
             tmp_path = tmp.name
 
         # --- aiv check (non-strict: warnings don't block) ---
