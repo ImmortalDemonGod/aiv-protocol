@@ -23,8 +23,8 @@ classification:
 
 1. `_validate_packet` returns `False` (blocks the commit) when `aiv check` exits non-zero on the staged packet. Falsifiable by: mocking `subprocess.run` to return `returncode=1` for the check call and observing the return value.
 2. `_validate_packet` returns `False` when `aiv check` passes but `aiv audit` exits non-zero. Falsifiable by: mocking the two subprocess calls to return `0` then `1`.
-3. These tests close the coverage gap raised in issue #24 (the SVP review of PR #10): the *content-invalid* fail-closed arm was previously only tested indirectly by stubbing the whole `_validate_packet`.
-4. No production code is modified; no existing test is modified or deleted.
+3. The two new tests close the coverage gap raised in the SVP review of PR #10: the content-invalid fail-closed arm was previously only exercised indirectly by stubbing the whole `_validate_packet`.
+4. Existing tests are preserved: no production code and no existing test file were modified or deleted; the change is a single additive new test file.
 
 ---
 
@@ -32,8 +32,7 @@ classification:
 
 ### Class E (Intent Alignment)
 
-- **Intent:** Issue #24 ("[suggestion] Should explicitly test the failure case: a packet that fails validation must actually block the commit") - surfaced from the SVP cognitive-evidence verification of PR #10 (F43 fail-closed).
-- **Link:** https://github.com/Black-Box-Research-Labs/aiv-protocol/issues/24
+- **Intent:** the SVP cognitive-evidence verification of PR #10 (the F43 fail-closed remediation) recorded that the content-invalid validation path was only indirectly covered, and asked for a direct regression test. Tracked with the audit findings in `docs/audits/2026-06-18-forensic/FINDINGS.md` (C1 / F43).
 - **Requirements verified:** a packet that fails validation (non-zero `aiv check` / `aiv audit`) must block the commit (return `False`), not pass.
 
 ### Class B (Referential Evidence)
@@ -54,25 +53,25 @@ classification:
 ### Class C (Negative Evidence - Conservation)
 
 - **Search scope:** the change set (one new test file).
-- **Result:** no production code modified; no existing test modified or deleted; no `@pytest.mark.skip` added. The change is purely additive test coverage.
+- **Result:** the change does NOT modify any production code, does NOT modify or delete any existing test, and does NOT add any `@pytest.mark.skip`. Absence of test-manipulation confirmed; the change is purely additive coverage.
 
 ### Class D (Differential Evidence)
 
-- **API / behavior diff:** none. `_validate_packet`'s behavior is unchanged; the PR only adds tests that observe the existing `returncode != 0 -> return False` paths. No public surface, state, or config change.
+- **API / behavior diff:** none. `_validate_packet`'s behavior is unchanged; the new tests only observe the existing `returncode != 0 -> return False` paths. No public surface, state, or config change.
 
 ### Class F (Provenance)
 
-- The tests are bound to the PR head commit on `test/precommit-failclosed-issue-24` and are the durable artifact pinning the content-invalid fail-closed arm against future drift.
-- Cryptographic provenance (signed commits / OIDC): N/A - no signing substrate is wired in this repo yet; the commit-bound diff + committed tests are the available integrity anchors.
+- **Claim 4** (existing tests preserved): no production code and no existing test file were modified or deleted; the change is a single additive new test file, `tests/unit/test_pre_commit_failclosed.py`. Its commit-bound diff on `test/precommit-failclosed-issue-24` and the CI run that re-executes it are the chain-of-custody anchors.
+- Cryptographic provenance (signed commits / OIDC): N/A - no signing substrate is wired in this repo yet.
 
 ---
 
 ## Verification Methodology
 
-The two tests drive the real `_validate_packet` (not a stub) with `subprocess.run` mocked to return a non-zero exit for `aiv check` (test 1) and for `aiv audit` after a passing check (test 2), asserting `_validate_packet` returns `False`. This directly exercises the fail-closed arm that issue #24 flagged as only-indirectly-covered. Ruff lint / format run clean; CI validates the full suite and this packet.
+The two tests drive the real `_validate_packet` (not a stub) with `subprocess.run` mocked to return a non-zero exit for `aiv check` (test 1) and for `aiv audit` after a passing check (test 2), asserting `_validate_packet` returns `False`. This directly exercises the fail-closed arm that the SVP review flagged as only-indirectly-covered. Ruff lint / format run clean; CI validates the full suite and this packet.
 
 ---
 
 ## Summary
 
-Closes issue #24 (SVP review of PR #10 / F43): adds two regression tests pinning that a *content-invalid* packet - one where `aiv check` or `aiv audit` exits non-zero - makes the pre-commit gate fail CLOSED (`_validate_packet` returns `False`, blocking the commit). Test-only; no production behavior change.
+Adds two regression tests pinning that a content-invalid packet - one where `aiv check` or `aiv audit` exits non-zero - makes the pre-commit gate fail CLOSED (`_validate_packet` returns `False`, blocking the commit). Test-only; no production behavior change.
