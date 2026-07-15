@@ -45,7 +45,13 @@ classification:
 
 ### Class A (Execution Evidence)
 
-**Per-symbol test coverage (AST analysis):**
+**Captured execution (SEAM harness, real pytest runs — not AST):**
+
+- RED baseline (this file's fix reverted at HEAD): `git show e838435:.github/aiv-packets/evidence/aiv-f15/seam_baseline_red_harness.txt` — `tests/test_aiv_f15.py FFF.` → `3 failed, 1 passed`, all 3 failures assert `_head_check reached urlopen` for the finding's three SSRF targets (`file:///etc/shadow`, `http://169.254.169.254/latest/meta-data/`, `http://127.0.0.1/`), confirming the pre-fix defect.
+- GREEN at HEAD (fix applied): `git show e838435:.github/aiv-packets/evidence/aiv-f15/seam_head_green_harness.txt` — `tests/test_aiv_f15.py ....` → `4 passed`, including `test_head_check_still_issues_head_request_for_normal_https_url` (the non-regression case).
+- These transcripts are committed in-repo at `.github/aiv-packets/evidence/aiv-f15/seam_baseline_red_harness.txt` and `.github/aiv-packets/evidence/aiv-f15/seam_head_green_harness.txt`; they are the actual RED-on-baseline/GREEN-at-HEAD demonstration for `_head_check`, captured by the harness, not a forward reference to a later regression gate.
+
+**Per-symbol test coverage (AST analysis, supplementary — static binding, not execution):**
 
 - **`LinkValidator`** (L9): PASS -- 6 test(s) call `LinkValidator` directly
   - `tests/unit/test_validators.py::test_audit_links_off_skips_network`
@@ -79,7 +85,7 @@ classification:
 ## Verification Methodology
 
 **Zero-Touch Mandate:** Verifier inspects artifacts only.
-Evidence collected by `aiv commit` running: git diff (scope inventory), AST symbol-to-test binding (2/3 symbols verified).
+Evidence collected by `aiv commit` running: git diff (scope inventory), AST symbol-to-test binding (2/3 symbols verified). Captured execution (RED baseline / GREEN at HEAD) collected separately by the harness's SEAM gate and cross-referenced above by commit SHA `e838435`.
 Ruff/mypy results are in Code Quality (not Class A) because they prove syntax/types, not behavior.
 
 ---
