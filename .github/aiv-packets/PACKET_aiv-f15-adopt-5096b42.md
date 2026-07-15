@@ -13,6 +13,8 @@
 | **Classification rationale** | R1/S0: this packet adopts an out-of-band operator commit (`5096b42`) that stays entirely inside `LinkValidator._head_check`/`_is_url_allowed` in a single validator module (`src/aiv/lib/validators/links.py`) plus its dedicated test file (`tests/test_aiv_f15.py`); no shared infrastructure, auth, or data-persistence code is touched, so blast radius is limited to this component and no split-duties reviewer is required. |
 | **Created** | 2026-07-15T06:37:00Z |
 
+## Classification
+
 ```yaml
 classification:
   risk_tier: R1
@@ -78,7 +80,7 @@ It left two gaps that `5096b42` closes, both still squarely inside the F15 SSRF 
 
 ### Class B (Referential Evidence)
 
-**Scope Inventory** (functional diff of `5096b42`, SHA [`5096b42`](https://github.com/Black-Box-Research-Labs/aiv-protocol/commit/5096b4202811df407140e1f1f71b40a725f97e86))
+**Scope Inventory** (functional diff of `5096b42`, file at [`src/aiv/lib/validators/links.py@5096b42`](https://github.com/Black-Box-Research-Labs/aiv-protocol/blob/5096b4202811df407140e1f1f71b40a725f97e86/src/aiv/lib/validators/links.py))
 
 - `src/aiv/lib/validators/links.py#L9-L19` (new imports: `contextlib`, `socket`, `typing.TYPE_CHECKING`/`Any`)
 - `src/aiv/lib/validators/links.py#L172-L182` (`_is_disallowed_ip`, factored out predicate)
@@ -125,7 +127,7 @@ See Scope Inventory above — 7 line-anchored references into the `5096b42` diff
 
 ### Class E (Intent Alignment)
 
-- Intent URL (canonical, unchanged from the original finding): https://github.com/Black-Box-Research-Labs/aiv-protocol/blob/55e19790f2080dc5881ddd132bf6e66f67e63a94/docs/audits/2026-06-18-forensic/02-static-audit.md#L25
+- Intent URL: https://github.com/Black-Box-Research-Labs/aiv-protocol/blob/55e19790f2080dc5881ddd132bf6e66f67e63a94/docs/audits/2026-06-18-forensic/02-static-audit.md#L25
 - Alignment: the cited audit source records that `_head_check` "passes any URL string from packet evidence links directly to `urllib.request.urlopen` without validating the scheme or host" and names `file://`/link-local/loopback bypasses as the concrete risk. `5096b42` is a refinement of the same intent, not a new concern: it closes the residual attack surface within that same defect class — hostnames that reach `urlopen` because they were never DNS-resolved and validated, and DNS-rebinding after validation — which the original `9cd36dd` fix's literal-IP-only check did not cover. The operator's edit stays inside `_head_check`/`_is_url_allowed`, the exact function and lines named in the finding.
 
 ### Class F (Provenance)
