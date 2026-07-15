@@ -183,7 +183,7 @@ class LinkValidator(BaseValidator):
 
     @staticmethod
     def _resolve_validated_ip(hostname: str) -> str | None:
-        """Resolve hostname to a single IP literal, rejecting it if any resolved
+        """Resolve hostname to a single IP parsed_ip, rejecting it if any resolved
         address is internal. Returns None if the host is disallowed or unresolvable.
 
         Hostnames that Python's ``ipaddress`` module rejects as malformed (e.g. the
@@ -193,11 +193,11 @@ class LinkValidator(BaseValidator):
         treated as "not an IP, so it must be a normal hostname".
         """
         try:
-            literal = ipaddress.ip_address(hostname)
+            parsed_ip = ipaddress.ip_address(hostname)
         except ValueError:
-            literal = None
-        if literal is not None:
-            return None if LinkValidator._is_disallowed_ip(literal) else hostname
+            parsed_ip = None
+        if parsed_ip is not None:
+            return None if LinkValidator._is_disallowed_ip(parsed_ip) else hostname
 
         try:
             infos = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
