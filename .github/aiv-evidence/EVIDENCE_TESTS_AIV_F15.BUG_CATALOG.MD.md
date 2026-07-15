@@ -1,7 +1,7 @@
 # AIV Evidence File (v1.0)
 
 **File:** `tests/aiv-f15.bug-catalog.md`
-**Commit:** `9f78605`
+**Commit:** `d818c06`
 **Generated:** 2026-07-15T05:48:37Z
 **Protocol:** AIV v2.0 + Addendum 2.7 (Zero-Touch Mandate)
 
@@ -36,9 +36,9 @@ classification:
 
 ### Class B (Referential Evidence)
 
-**Scope Inventory** (SHA: [`9f78605`](https://github.com/Black-Box-Research-Labs/aiv-protocol/tree/9f7860541e52dca882f5e53da8d2cf10b0c4506f))
+**Scope Inventory** (SHA: [`d818c06`](https://github.com/Black-Box-Research-Labs/aiv-protocol/tree/d818c06a9e6d6343f0bf097521c7cbff7cad3646))
 
-- [`tests/aiv-f15.bug-catalog.md#L1-L33`](https://github.com/Black-Box-Research-Labs/aiv-protocol/blob/9f7860541e52dca882f5e53da8d2cf10b0c4506f/tests/aiv-f15.bug-catalog.md#L1-L33)
+- [`tests/aiv-f15.bug-catalog.md#L1-L33`](https://github.com/Black-Box-Research-Labs/aiv-protocol/blob/d818c06a9e6d6343f0bf097521c7cbff7cad3646/tests/aiv-f15.bug-catalog.md#L1-L33)
 
 ### Class A (Execution Evidence)
 
