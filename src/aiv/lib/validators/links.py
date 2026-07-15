@@ -6,8 +6,10 @@ URL validation and immutability checking (Addendum 2.2).
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from ..config import MutableBranchConfig
@@ -159,9 +161,35 @@ class LinkValidator(BaseValidator):
 
         return findings
 
+    _ALLOWED_SCHEMES = {"http", "https"}
+
+    @staticmethod
+    def _is_url_allowed(url: str) -> bool:
+        """Reject non-http(s) schemes and requests to loopback/private/link-local hosts."""
+        parsed = urlparse(url)
+        if parsed.scheme not in LinkValidator._ALLOWED_SCHEMES:
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        try:
+            addr = ipaddress.ip_address(hostname)
+        except ValueError:
+            return True
+        return not (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified
+        )
+
     @staticmethod
     def _head_check(url: str) -> tuple[int | None, str]:
         """Send an HTTP HEAD request. Returns (status_code, reason) or (None, error_msg)."""
+        if not LinkValidator._is_url_allowed(url):
+            return (None, "blocked by SSRF guard: disallowed scheme or host")
         try:
             req = Request(url, method="HEAD")
             req.add_header("User-Agent", "aiv-link-checker/1.0")
