@@ -1,7 +1,7 @@
 # AIV Evidence File (v1.0)
 
 **File:** `tests/test_aiv_f15.py`
-**Commit:** `d818c06`
+**Commit:** `1a60eb4`
 **Generated:** 2026-07-15T05:48:38Z
 **Protocol:** AIV v2.0 + Addendum 2.7 (Zero-Touch Mandate)
 
@@ -36,13 +36,19 @@ classification:
 
 ### Class B (Referential Evidence)
 
-**Scope Inventory** (SHA: [`d818c06`](https://github.com/Black-Box-Research-Labs/aiv-protocol/tree/d818c06a9e6d6343f0bf097521c7cbff7cad3646))
+**Scope Inventory** (SHA: [`1a60eb4`](https://github.com/Black-Box-Research-Labs/aiv-protocol/tree/1a60eb4c4d67902e4fb41b721708d3d79ef0adf6))
 
-- [`tests/test_aiv_f15.py#L1-L64`](https://github.com/Black-Box-Research-Labs/aiv-protocol/blob/d818c06a9e6d6343f0bf097521c7cbff7cad3646/tests/test_aiv_f15.py#L1-L64)
+- [`tests/test_aiv_f15.py#L1-L64`](https://github.com/Black-Box-Research-Labs/aiv-protocol/blob/1a60eb4c4d67902e4fb41b721708d3d79ef0adf6/tests/test_aiv_f15.py#L1-L64)
 
 ### Class A (Execution Evidence)
 
-**Per-symbol test coverage (AST analysis):**
+**Captured execution (SEAM harness, real pytest runs — not AST):**
+
+- RED baseline (`src/aiv/lib/validators/links.py` reverted at HEAD): `git show e838435:.github/aiv-packets/evidence/aiv-f15/seam_baseline_red_harness.txt` — `tests/test_aiv_f15.py FFF.` → `3 failed, 1 passed`, all 3 failures assert `_head_check reached urlopen` for the finding's three SSRF targets (`file:///etc/shadow`, `http://169.254.169.254/latest/meta-data/`, `http://127.0.0.1/`).
+- GREEN at HEAD (fix applied): `git show e838435:.github/aiv-packets/evidence/aiv-f15/seam_head_green_harness.txt` — `tests/test_aiv_f15.py ....` → `4 passed`.
+- These transcripts are committed in-repo at `.github/aiv-packets/evidence/aiv-f15/seam_baseline_red_harness.txt` and `.github/aiv-packets/evidence/aiv-f15/seam_head_green_harness.txt`; they are the actual RED-on-baseline/GREEN-at-HEAD demonstration for this test file, captured by the harness, not a forward reference to a later gate.
+
+**Per-symbol test coverage (AST analysis, supplementary — static binding, not execution):**
 
 - **`_SpyResp`** (L1-L64): PASS -- 2 test(s) call `_SpyResp` directly
   - `tests/test_aiv_f15.py::test_head_check_blocks_ssrf_targets_without_reaching_urlopen`
@@ -76,7 +82,7 @@ classification:
 ## Verification Methodology
 
 **Zero-Touch Mandate:** Verifier inspects artifacts only.
-Evidence collected by `aiv commit` running: git diff (scope inventory), AST symbol-to-test binding (2/7 symbols verified).
+Evidence collected by `aiv commit` running: git diff (scope inventory), AST symbol-to-test binding (2/7 symbols verified). Captured execution (RED baseline / GREEN at HEAD) collected separately by the harness's SEAM gate and cross-referenced above by commit SHA `e838435`.
 Ruff/mypy results are in Code Quality (not Class A) because they prove syntax/types, not behavior.
 
 ---
