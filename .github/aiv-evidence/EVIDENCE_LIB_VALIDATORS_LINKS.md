@@ -52,6 +52,11 @@ classification:
 
 ### Class A (Execution Evidence)
 
+**Captured execution (real pytest run, not AST):**
+
+- `tests/test_aiv_f15.py -v` → `9 passed` (7 SSRF-block cases incl. the DNS-resolved bypasses `127.1`, `localhost`, and attacker-hostname-to-internal-IP; the non-regression normal-https case; the DNS-pinning/rebinding-prevention case). Transcript committed at `.github/aiv-packets/evidence/aiv-f15/head_check_dns_pin_fix.txt`.
+- `mypy src/aiv/lib/validators/links.py` → `Success: no issues found in 1 source file` (same transcript file, appended).
+
 **Per-symbol test coverage (AST analysis):**
 
 - **`LinkValidator`** (L9): PASS -- 6 test(s) call `LinkValidator` directly
@@ -76,7 +81,7 @@ classification:
 ### Code Quality (Linting & Types)
 
 - **ruff:** 0 error(s)
-- **mypy:** 
+- **mypy:** `mypy src/aiv/lib/validators/links.py` → Success: no issues found in 1 source file (see transcript above)
 
 ## Claim Verification Matrix
 
