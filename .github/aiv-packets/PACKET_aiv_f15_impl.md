@@ -19,7 +19,7 @@ classification:
   sod_mode: S0
   critical_surfaces: []
   blast_radius: component
-  classification_rationale: "TODO: Describe why this tier was chosen"
+  classification_rationale: "R1/S0: the fix is confined to LinkValidator._head_check in a single validator module (src/aiv/lib/validators/links.py) — an added scheme/host allowlist guard before urlopen — with no changes to shared infrastructure, auth, or data-persistence code, so blast radius is limited to this component and no split-duties reviewer is required."
   classified_by: "Claude"
   classified_at: "2026-07-15T05:50:15Z"
 ```
@@ -72,7 +72,10 @@ Change 'aiv-f15-impl': 1 commit(s) across 1 file(s).
 
 ### Class A (Behavioral/Direct)
 
-- Full regression suite GREEN at HEAD (orchestrator regression gate, baseline-subtracted): the design-tests RED tests pass and no baseline test regressed.
+- Full regression suite GREEN at HEAD (orchestrator regression gate, baseline-subtracted): the design-tests RED tests pass and no baseline test regressed. Captured execution (not a forward reference): the in-repo SEAM harness transcripts show the RED-on-baseline / GREEN-at-HEAD demonstration for `_head_check` already ran —
+  `.github/aiv-packets/evidence/aiv-f15/seam_baseline_red_harness.txt` (commit `e838435`, this fix reverted): `tests/test_aiv_f15.py FFF.` → `3 failed, 1 passed`, each failure confirming `_head_check reached urlopen` for `file:///etc/shadow`, `http://169.254.169.254/latest/meta-data/`, `http://127.0.0.1/`.
+  `.github/aiv-packets/evidence/aiv-f15/seam_head_green_harness.txt` (commit `e838435`, fix applied): `tests/test_aiv_f15.py ....` → `4 passed`, including the non-regression case for a normal https URL.
+  See also `EVIDENCE_LIB_VALIDATORS_LINKS.md` Class A, which cross-references the same transcripts.
 
 ### Class C (Negative)
 
