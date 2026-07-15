@@ -60,3 +60,8 @@ class_c_negative.json
 test_integrity_semantic.json
 durable_storage_oci.json
 artifacts/
+# AIV scaffolding (corpus-captured) + provisioned venv — kept off the PR (#1/#40; .venv dangles on CI)
+.aiv/launch-briefs/
+.aiv/plans/
+.venv
+.aiv-workflow.yml
