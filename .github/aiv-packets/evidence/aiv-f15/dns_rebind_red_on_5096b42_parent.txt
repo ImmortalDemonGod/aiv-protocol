@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-8.4.2, pluggy-1.6.0 -- /home/user/aiv-protocol-aiv-f15/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /tmp/claude-0/-home-user-aiv-protocol-aiv-f15/ddec3383-e222-53f2-a1d7-f6cb5a65f549/scratchpad/aiv-f15-baseline-5096b42-parent
+configfile: pyproject.toml
+plugins: xdist-3.8.0, cov-5.0.0
+collecting ... collected 1 item
+
+tests/test_dns_bypass_red_on_parent.py::test_dns_bypass_targets_reach_urlopen_on_pre_fix_code PASSED [100%]
+
+============================== 1 passed in 0.16s ===============================

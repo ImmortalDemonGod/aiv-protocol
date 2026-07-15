@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-8.4.2, pluggy-1.6.0 -- /home/user/aiv-protocol-aiv-f15/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/user/aiv-protocol-aiv-f15
+configfile: pyproject.toml
+plugins: xdist-3.8.0, cov-5.0.0
+collecting ... collected 9 items
+
+tests/test_aiv_f15.py::test_head_check_blocks_ssrf_targets_without_reaching_urlopen[file:///etc/shadow-dns_map0] PASSED [ 11%]
+tests/test_aiv_f15.py::test_head_check_blocks_ssrf_targets_without_reaching_urlopen[http://169.254.169.254/latest/meta-data/-dns_map1] PASSED [ 22%]
+tests/test_aiv_f15.py::test_head_check_blocks_ssrf_targets_without_reaching_urlopen[http://127.0.0.1/-dns_map2] PASSED [ 33%]
+tests/test_aiv_f15.py::test_head_check_blocks_ssrf_targets_without_reaching_urlopen[http://localhost/-dns_map3] PASSED [ 44%]
+tests/test_aiv_f15.py::test_head_check_blocks_ssrf_targets_without_reaching_urlopen[http://127.1/-dns_map4] PASSED [ 55%]
+tests/test_aiv_f15.py::test_head_check_blocks_ssrf_targets_without_reaching_urlopen[http://metadata.internal.example.com/-dns_map5] PASSED [ 66%]
+tests/test_aiv_f15.py::test_head_check_blocks_ssrf_targets_without_reaching_urlopen[http://rebind.example.com/-dns_map6] PASSED [ 77%]
+tests/test_aiv_f15.py::test_head_check_still_issues_head_request_for_normal_https_url PASSED [ 88%]
+tests/test_aiv_f15.py::test_pinned_dns_forces_resolution_to_validated_ip PASSED [100%]
+
+============================== 9 passed in 0.16s ===============================
