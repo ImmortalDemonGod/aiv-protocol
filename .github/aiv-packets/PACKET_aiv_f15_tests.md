@@ -82,7 +82,7 @@ Change 'aiv-f15-tests': 2 commit(s) across 2 file(s).
 
 ### Class D (Static analysis)
 
-- New test file(s) lint-clean at HEAD (flake8 / black -l 79) per the orchestrator's checks.
+- `ruff check tests/test_aiv_f15.py` → 0 errors. `mypy tests/test_aiv_f15.py` → Success: no issues found in 1 source file. flake8 and black are not configured in this repository (ruff supersedes both per `pyproject.toml`) and were not run.
 
 ### Class E (Intent Alignment)
 

@@ -83,7 +83,7 @@ Change 'aiv-f15-impl': 1 commit(s) across 1 file(s).
 
 ### Class D (Static analysis)
 
-- Repo lint/type suite clean at HEAD (flake8 / black -l 79 / mypy) per the orchestrator determinism + regression gates.
+- `ruff check src/aiv/lib/validators/links.py` → 0 errors. `mypy src/aiv/lib/validators/links.py` → Success: no issues found in 1 source file (see `EVIDENCE_LIB_VALIDATORS_LINKS.md` Class A / Code Quality and `.github/aiv-packets/evidence/aiv-f15/head_check_dns_pin_fix.txt`). flake8 and black are not configured in this repository (ruff supersedes both per `pyproject.toml`) and were not run.
 
 ### Class E (Intent Alignment)
 
