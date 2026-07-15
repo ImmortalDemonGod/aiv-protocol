@@ -19,7 +19,7 @@ classification:
   sod_mode: S0
   critical_surfaces: []
   blast_radius: component
-  classification_rationale: "TODO: Describe why this tier was chosen"
+  classification_rationale: "R1/S0: change is confined to a new, additive test file (tests/test_aiv_f15.py) that pins the SSRF defect in a single validator method; no production code, shared fixture, or existing test is touched, so blast radius is limited to this component and no split-duties reviewer is required."
   classified_by: "Claude"
   classified_at: "2026-07-15T05:48:39Z"
 ```
@@ -71,7 +71,10 @@ Change 'aiv-f15-tests': 2 commit(s) across 2 file(s).
 
 ### Class A (Behavioral/Direct)
 
-- RED test(s) authored that pin the finding's defect; the RED-on-baseline / GREEN-at-HEAD demonstration is performed by prove-it (the SEAM gate) against the cited baseline SHA.
+- RED test(s) authored that pin the finding's defect. Captured execution (not a forward reference): the in-repo SEAM harness transcripts show the RED-on-baseline / GREEN-at-HEAD demonstration already ran —
+  `.github/aiv-packets/evidence/aiv-f15/seam_baseline_red_harness.txt` (commit `e838435`): `tests/test_aiv_f15.py FFF.` → `3 failed, 1 passed`, each failure asserting `_head_check reached urlopen` for `file:///etc/shadow`, `http://169.254.169.254/latest/meta-data/`, `http://127.0.0.1/` — the RIGHT reason (finding's defect, not a fixture error).
+  `.github/aiv-packets/evidence/aiv-f15/seam_head_green_harness.txt` (commit `e838435`): `tests/test_aiv_f15.py ....` → `4 passed` at HEAD.
+  See also `EVIDENCE_TESTS_TEST_AIV_F15.md` Class A, which cross-references the same transcripts.
 
 ### Class C (Negative)
 
