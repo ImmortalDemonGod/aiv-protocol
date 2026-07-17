@@ -267,8 +267,18 @@ class VerificationPacket(BaseModel):
 
     @property
     def has_provenance_evidence(self) -> bool:
-        """Check if packet includes Class F (Provenance) evidence."""
-        return any(c.evidence_class == EvidenceClass.PROVENANCE for c in self.claims)
+        """Check if packet includes Class F (Provenance) evidence.
+
+        Consults both claim assignments and `evidence_classes_present`: a packet whose
+        `### Class F (Provenance)` section carries real content has provenance evidence even when
+        no individual claim parsed as PROVENANCE-classed. Checking claims alone made E010 fire on
+        honest packets that mentioned an issue number anywhere in the intent text while their
+        Class F section sat right there (false positive found by the money-agent integration).
+        """
+        return (
+            EvidenceClass.PROVENANCE in self.evidence_classes_present
+            or any(c.evidence_class == EvidenceClass.PROVENANCE for c in self.claims)
+        )
 
 
 class ValidationFinding(BaseModel):
