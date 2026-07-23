@@ -1,5 +1,12 @@
 # AIV Verification Packet (v2.2)
 
+## Summary
+
+Two isolated bug fixes surfaced by the money-agent R3 integration: the E010 provenance false
+positive in `has_provenance_evidence` (`src/aiv/lib/models.py`), and #29's installed-hook
+interpreter pinning (`src/aiv/cli/main.py`). No API change; validator behavior only widens on
+packets that carry a filled Class F section. Full suite after both fixes: 739 passed, 22 skipped.
+
 ## Identification
 
 | Field | Value |
@@ -39,7 +46,7 @@ classification:
 
 ## Evidence
 
-### Class A (Execution)
+### Class A (Execution Evidence)
 
 A) Execution: full suite after both fixes: **739 passed, 22 skipped** (`python -m pytest tests -q`).
 Regression demonstrations: (1) a downstream money-agent R3 packet containing "issue 6" in its
@@ -48,7 +55,7 @@ with its Class F section unchanged; (2) fresh `aiv init` in a scratch repo write
 hook whose first line is the absolute path of the owning interpreter (verified by reading
 `.git/hooks/pre-commit` line 1), where it previously wrote `#!/usr/bin/env python3`.
 
-### Class B (Referential)
+### Class B (Referential Evidence)
 
 B) Referential: commit `21fde2f` (models.py, `has_provenance_evidence`), commit `16f2bd2`
 (cli/main.py, `_hook_shebang()` helper + both hook shims). The pre-existing model field consulted

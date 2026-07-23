@@ -275,9 +275,8 @@ class VerificationPacket(BaseModel):
         honest packets that mentioned an issue number anywhere in the intent text while their
         Class F section sat right there (false positive found by the money-agent integration).
         """
-        return (
-            EvidenceClass.PROVENANCE in self.evidence_classes_present
-            or any(c.evidence_class == EvidenceClass.PROVENANCE for c in self.claims)
+        return EvidenceClass.PROVENANCE in self.evidence_classes_present or any(
+            c.evidence_class == EvidenceClass.PROVENANCE for c in self.claims
         )
 
 
