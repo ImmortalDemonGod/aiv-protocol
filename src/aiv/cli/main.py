@@ -28,6 +28,23 @@ app.add_typer(svp_app, name="svp")
 console = Console()
 
 
+def _hook_shebang() -> str:
+    """Shebang for installed git hooks: the interpreter `aiv` is RUNNING UNDER, not whatever
+    `python3` resolves to on PATH at commit time.
+
+    Issue #29: with `#!/usr/bin/env python3`, any environment where the first python3 on PATH is
+    not the one aiv was pip-installed into (pyenv shims, system python vs venv, Homebrew vs
+    Xcode) makes every commit die with ModuleNotFoundError: No module named 'aiv' -- while
+    `aiv init` still reports success. sys.executable is by definition an interpreter that can
+    import aiv. Fallback to the env form only when the path would break the shebang line itself
+    (whitespace: kernels do not quote shebang arguments).
+    """
+    exe = sys.executable or ""
+    if exe and not any(ch.isspace() for ch in exe):
+        return f"#!{exe}"
+    return "#!/usr/bin/env python3"
+
+
 @app.command()
 def check(
     body: str | None = typer.Argument(None, help="PR body text or path to file containing it"),
@@ -172,7 +189,7 @@ def init(
             hooks_dir.mkdir(parents=True, exist_ok=True)
             hook_file = hooks_dir / "pre-commit"
             hook_shim = (
-                "#!/usr/bin/env python3\n"
+                f"{_hook_shebang()}\n"
                 '"""AIV Protocol pre-commit hook. Installed by `aiv init`."""\n'
                 "import sys\n"
                 "from aiv.hooks.pre_commit import main\n"
@@ -201,7 +218,7 @@ def init(
             # Install pre-push hook (catches --no-verify bypass)
             push_hook_file = hooks_dir / "pre-push"
             push_hook_shim = (
-                "#!/usr/bin/env python3\n"
+                f"{_hook_shebang()}\n"
                 '"""AIV Protocol pre-push hook. Installed by `aiv init`.\n'
                 "\n"
                 "Catches commits that bypassed the pre-commit hook via --no-verify.\n"
