@@ -15,8 +15,8 @@ with bite tests that fail on pre-fix HEAD and pass after. Full suite: 774 passed
 |-------|-------|
 | **Repository** | github.com/Black-Box-Research-Labs/aiv-protocol |
 | **Change ID** | issue29-lifecycle-and-bootstrap |
-| **Commits** | `d0c92d9`, `4ca16e9` |
-| **Head SHA** | `4ca16e9` |
+| **Commits** | `d0c92d9`, `4ca16e9`, `ea444b5` |
+| **Head SHA** | `ea444b5` |
 | **Base SHA** | `958b2ba` |
 | **Created** | 2026-07-23 |
 
@@ -74,9 +74,9 @@ exemption, softened diagnostic). Tests: `test_post_commit_hook.py` (new), and ad
 
 ### Class F (Provenance)
 
-F) Provenance: the change is content-addressed by its commits — `d0c92d9` (bug #2) and `4ca16e9`
-(bug #3), head `4ca16e9` over base `958b2ba` (the #30 merge). Each SHA binds the exact diff this
-packet describes.
+F) Provenance: the change is content-addressed by its commits — `d0c92d9` (bug #2), `4ca16e9`
+(bug #3), and `ea444b5` (CodeRabbit review round), head `ea444b5` over base `958b2ba` (the #30
+merge). Each SHA binds the exact diff this packet describes.
 
 ### Class E (Intent Alignment)
 
@@ -95,6 +95,12 @@ The fixes were then applied and the same scenarios verified passing, the bite te
 full suite plus lint and type-check run. The bite proofs were run by reverting only the single
 functional file (`git stash` of that path) so the assertion executes against otherwise-current
 code, then restoring it — because a whole-tree revert would also remove the tests.
+
+A CodeRabbit review round (`ea444b5`) hardened `reconstruct_commits`: it now requires an explicit
+`base_sha` anchor (an empty anchor returns `[]` rather than falling back to `git log HEAD`, which
+would sweep in pre-existing branch commits) and stores each record's commit **author** time rather
+than the reconstruction time. The same round consolidated the duplicated evidence classifier and
+the triplicated `aiv init` hook-install block.
 
 ## Honest limitations
 
