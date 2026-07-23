@@ -193,6 +193,11 @@ _EVIDENCE_PREFIX = ".github/aiv-evidence/EVIDENCE_"
 
 
 def _is_evidence_or_packet(path: str) -> bool:
+    """True if `path` is an AIV evidence or verification-packet markdown file.
+
+    The canonical classifier, shared with `hooks/post_commit.py` so a commit's
+    evidence is labelled identically at record time and at reconstruction time.
+    """
     if not path.endswith(".md"):
         return False
     return path.startswith(_EVIDENCE_PREFIX) or any(path.startswith(p) for p in _PACKET_PREFIXES)
@@ -221,12 +226,24 @@ def reconstruct_commits(ctx: ChangeContext, repo_root: Path | None = None) -> li
     with no post-commit hook, a GUI that skips hooks, or commits made before this
     change was begun). Returns commits oldest-first; empty if the range is empty or
     git is unavailable. (issue #29, bug #2)
+
+    Requires an explicit `base_sha` anchor. A change begun before this field existed
+    (old schema) or in a commit-less repo has `base_sha == ""`; reconstruction is then
+    UNAVAILABLE (returns `[]`) rather than falling back to `git log HEAD`, which would
+    sweep in every pre-existing commit on the branch instead of just the change's own.
+    `close_change` then raises its normal "has no commits" error, and the state
+    self-heals on the next `aiv begin` (which records a fresh `base_sha`).
+
+    Each record's `timestamp` is the commit's own author time (`%aI`), so a
+    reconstructed packet preserves when the work actually happened, not when `close`
+    was run.
     """
+    if not ctx.base_sha:
+        return []  # no anchor -> reconstruction unavailable; never `git log HEAD`
     cwd = str(repo_root) if repo_root else None
-    rev_range = f"{ctx.base_sha}..HEAD" if ctx.base_sha else "HEAD"
     try:
         result = subprocess.run(
-            ["git", "log", rev_range, "--reverse", "--format=%H%x00%s"],
+            ["git", "log", f"{ctx.base_sha}..HEAD", "--reverse", "--format=%H%x00%aI%x00%s"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -241,7 +258,10 @@ def reconstruct_commits(ctx: ChangeContext, repo_root: Path | None = None) -> li
     for line in result.stdout.strip().split("\n"):
         if not line.strip():
             continue
-        sha, _, message = line.partition("\x00")
+        parts = line.split("\x00")
+        if len(parts) < 3:
+            continue
+        sha, authored_at, message = parts[0], parts[1], parts[2]
         files = _files_in_commit(sha, cwd)
         evidence = [f for f in files if _is_evidence_or_packet(f)]
         records.append(
@@ -250,7 +270,7 @@ def reconstruct_commits(ctx: ChangeContext, repo_root: Path | None = None) -> li
                 message=message,
                 files=files,
                 evidence=evidence,
-                timestamp=datetime.now(timezone.utc).isoformat(),
+                timestamp=authored_at,  # commit author time, not reconstruction time
             )
         )
     return records

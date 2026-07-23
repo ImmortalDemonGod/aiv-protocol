@@ -23,14 +23,6 @@ from __future__ import annotations
 import subprocess
 import sys
 
-PACKET_PREFIXES = (
-    ".github/aiv-packets/VERIFICATION_PACKET_",
-    ".github/VERIFICATION_PACKET_",
-    ".github/aiv-packets/PACKET_",
-)
-EVIDENCE_PREFIX = ".github/aiv-evidence/EVIDENCE_"
-PACKET_SUFFIX = ".md"
-
 
 def _run_git(*args: str) -> str:
     """Run a git command, returning stripped stdout ("" on any failure)."""
@@ -46,13 +38,8 @@ def _run_git(*args: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _is_evidence_or_packet(path: str) -> bool:
-    if not path.endswith(PACKET_SUFFIX):
-        return False
-    return path.startswith(EVIDENCE_PREFIX) or any(path.startswith(p) for p in PACKET_PREFIXES)
-
-
 def _commit_files(sha: str) -> list[str]:
+    """Return the files touched by a single commit (empty for a root commit)."""
     out = _run_git("diff-tree", "--no-commit-id", "--name-only", "-r", sha)
     return [f for f in out.split("\n") if f]
 
@@ -60,7 +47,9 @@ def _commit_files(sha: str) -> list[str]:
 def main() -> int:
     """Record HEAD into the active change context, if any. Always returns 0."""
     try:
-        from aiv.lib.change import load_change, record_commit
+        # Reuse the canonical evidence/packet classifier so a commit's evidence is
+        # labelled the same here as during close-time reconstruction (issue #29).
+        from aiv.lib.change import _is_evidence_or_packet, load_change, record_commit
 
         ctx = load_change()
         if ctx is None:

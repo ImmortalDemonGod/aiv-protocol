@@ -6,6 +6,7 @@ Tests for the change lifecycle module (aiv begin / close / abandon / status).
 
 from __future__ import annotations
 
+import os
 import subprocess
 from typing import TYPE_CHECKING
 
@@ -329,3 +330,34 @@ class TestCloseReconstructsFromHistory:
         # no commits after begin -> genuinely empty -> must still raise
         with pytest.raises(ValueError, match="no commits"):
             close_change(repo_root=tmp_path)
+
+    def test_reconstruction_unavailable_without_base_sha(self, tmp_path: Path) -> None:
+        # An old-schema change (no base_sha) must NOT reconstruct all branch history
+        # via `git log HEAD`; reconstruction is unavailable and close raises cleanly.
+        _init_git_repo(tmp_path)
+        begin_change(name="feat-x", repo_root=tmp_path)
+        ctx = load_change(tmp_path)
+        assert ctx is not None
+        ctx.base_sha = ""  # simulate a change begun before base_sha existed
+        save_change(ctx, tmp_path)
+        _git_commit(tmp_path, "src/a.py", "a\n", "feat: a")
+        with pytest.raises(ValueError, match="no commits"):
+            close_change(repo_root=tmp_path)
+
+    def test_reconstructed_timestamp_is_author_time(self, tmp_path: Path) -> None:
+        _init_git_repo(tmp_path)
+        begin_change(name="feat-x", repo_root=tmp_path)
+        p = tmp_path / "src" / "a.py"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("a\n")
+        subprocess.run(["git", "add", "src/a.py"], cwd=str(tmp_path), capture_output=True, check=True)
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_DATE": "2020-01-02T03:04:05+00:00",
+            "GIT_COMMITTER_DATE": "2020-01-02T03:04:05+00:00",
+        }
+        subprocess.run(["git", "commit", "-m", "feat: a"], cwd=str(tmp_path), capture_output=True, check=True, env=env)
+
+        ctx = close_change(repo_root=tmp_path)
+        # timestamp is the commit's author time, not "now"
+        assert ctx.commits[0].timestamp.startswith("2020-01-02T03:04:05")
