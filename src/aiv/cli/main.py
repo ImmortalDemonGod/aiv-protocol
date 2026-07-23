@@ -45,6 +45,34 @@ def _hook_shebang() -> str:
     return "#!/usr/bin/env python3"
 
 
+def _install_hook(hooks_dir: Path, name: str, shim: str) -> None:
+    """Install a single git-hook shim, or warn (never overwrite) if one exists.
+
+    Shared by the pre-commit / post-commit / pre-push installs in `aiv init` so the
+    exists-check, warning text, executable bit, and message live in one place.
+    """
+    hook_file = hooks_dir / name
+    if hook_file.exists():
+        existing = hook_file.read_text(encoding="utf-8", errors="replace")
+        if "aiv" in existing.lower():
+            console.print(f"[yellow]Warning:[/yellow] {hook_file} already contains AIV hook, skipping.")
+        else:
+            console.print(
+                f"[yellow]Warning:[/yellow] {hook_file} exists (non-AIV). "
+                "Use [bold]--no-hook[/bold] to skip, or remove it manually first."
+            )
+        return
+    hook_file.write_text(shim, encoding="utf-8")
+    # Make executable on Unix
+    try:
+        import stat
+
+        hook_file.chmod(hook_file.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    except OSError:
+        pass
+    console.print(f"[green]Installed:[/green] {name} hook -> {hook_file}")
+
+
 @app.command()
 def check(
     body: str | None = typer.Argument(None, help="PR body text or path to file containing it"),
@@ -187,37 +215,37 @@ def init(
         else:
             hooks_dir = git_dir / "hooks"
             hooks_dir.mkdir(parents=True, exist_ok=True)
-            hook_file = hooks_dir / "pre-commit"
-            hook_shim = (
+
+            _install_hook(
+                hooks_dir,
+                "pre-commit",
                 f"{_hook_shebang()}\n"
                 '"""AIV Protocol pre-commit hook. Installed by `aiv init`."""\n'
                 "import sys\n"
                 "from aiv.hooks.pre_commit import main\n"
-                "sys.exit(main())\n"
+                "sys.exit(main())\n",
             )
-            if hook_file.exists():
-                existing = hook_file.read_text(encoding="utf-8", errors="replace")
-                if "aiv" in existing.lower():
-                    console.print(f"[yellow]Warning:[/yellow] {hook_file} already contains AIV hook, skipping.")
-                else:
-                    console.print(
-                        f"[yellow]Warning:[/yellow] {hook_file} exists (non-AIV). "
-                        "Use [bold]--no-hook[/bold] to skip, or remove it manually first."
-                    )
-            else:
-                hook_file.write_text(hook_shim, encoding="utf-8")
-                # Make executable on Unix
-                try:
-                    import stat
 
-                    hook_file.chmod(hook_file.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-                except OSError:
-                    pass
-                console.print(f"[green]Installed:[/green] pre-commit hook -> {hook_file}")
+            # Post-commit records commits into the active change context; the commit
+            # SHA is only knowable AFTER the commit exists (issue #29).
+            _install_hook(
+                hooks_dir,
+                "post-commit",
+                f"{_hook_shebang()}\n"
+                '"""AIV Protocol post-commit hook. Installed by `aiv init`.\n'
+                "\n"
+                "Records each commit into the active change context so `aiv close`\n"
+                'can package it. No-op when no change is active."""\n'
+                "import sys\n"
+                "from aiv.hooks.post_commit import main\n"
+                "sys.exit(main())\n",
+            )
 
-            # Install pre-push hook (catches --no-verify bypass)
-            push_hook_file = hooks_dir / "pre-push"
-            push_hook_shim = (
+            # Pre-push catches --no-verify bypass: git commit --no-verify skips
+            # pre-commit, but NOT pre-push.
+            _install_hook(
+                hooks_dir,
+                "pre-push",
                 f"{_hook_shebang()}\n"
                 '"""AIV Protocol pre-push hook. Installed by `aiv init`.\n'
                 "\n"
@@ -225,26 +253,8 @@ def init(
                 'git commit --no-verify skips pre-commit, but NOT pre-push."""\n'
                 "import sys\n"
                 "from aiv.hooks.pre_push import main\n"
-                "sys.exit(main())\n"
+                "sys.exit(main())\n",
             )
-            if push_hook_file.exists():
-                existing = push_hook_file.read_text(encoding="utf-8", errors="replace")
-                if "aiv" in existing.lower():
-                    console.print(f"[yellow]Warning:[/yellow] {push_hook_file} already contains AIV hook, skipping.")
-                else:
-                    console.print(
-                        f"[yellow]Warning:[/yellow] {push_hook_file} exists (non-AIV). "
-                        "Use [bold]--no-hook[/bold] to skip, or remove it manually first."
-                    )
-            else:
-                push_hook_file.write_text(push_hook_shim, encoding="utf-8")
-                try:
-                    import stat
-
-                    push_hook_file.chmod(push_hook_file.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-                except OSError:
-                    pass
-                console.print(f"[green]Installed:[/green] pre-push hook -> {push_hook_file}")
 
     console.print(f"[green][OK] AIV Protocol initialized in {path}[/green]")
     console.print(
@@ -274,7 +284,7 @@ def quickstart() -> None:
         "\n[bold cyan]Step 0: Initialize (once per repo)[/bold cyan]\n"
         "  aiv init\n"
         "  # Creates .aiv.yml, .github/aiv-packets/, .github/aiv-evidence/,\n"
-        "  # and git hooks (pre-commit + pre-push)\n"
+        "  # and git hooks (pre-commit + post-commit + pre-push)\n"
     )
     console.print(
         "[bold cyan]Step 1: Start a tracked change[/bold cyan]\n"

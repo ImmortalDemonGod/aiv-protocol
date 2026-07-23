@@ -162,6 +162,48 @@ def _is_evidence(path: str) -> bool:
     return path.startswith(EVIDENCE_PREFIX) and path.endswith(PACKET_SUFFIX)
 
 
+def _aiv_adoption_sha() -> str | None:
+    """SHA of the commit that first added ``.aiv.yml`` — the AIV enforcement baseline.
+
+    Commits at or before this predate AIV adoption (the repo's bootstrap: installing
+    aiv, adding config, the scaffolding commits) and cannot be expected to carry
+    verification packets. Enforcing packets on them makes a fresh ``aiv init`` repo
+    permanently unpushable (issue #29, bug #3). Returns None if ``.aiv.yml`` is not
+    in history, in which case no exemption applies (fail-safe: scan everything).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", "--diff-filter=A", "--format=%H", "--", ".aiv.yml"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        shas = [s for s in result.stdout.strip().split("\n") if s]
+        # git log is newest-first; the LAST line is the earliest add of .aiv.yml.
+        return shas[-1] if shas else None
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
+def _is_pre_adoption(sha: str, adoption_sha: str | None) -> bool:
+    """True if ``sha`` is the adoption commit or an ancestor of it (i.e. at/before
+    AIV was adopted in this repo). Such commits are exempt from packet enforcement."""
+    if not adoption_sha:
+        return False
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", sha, adoption_sha],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
 def check_commits(commits: list[str]) -> list[tuple[str, list[str]]]:
     """
     Identify commits that modify functional files but lack verification packet or evidence coverage.
@@ -182,6 +224,10 @@ def check_commits(commits: list[str]) -> list[tuple[str, list[str]]]:
     # Load config from .aiv.yml (consistent with pre-commit hook and CI auditor)
     func_prefixes, func_root_files = load_hook_config()
 
+    # Commits at/before AIV adoption (the .aiv.yml bootstrap) are exempt — they could
+    # not have carried packets (issue #29, bug #3). Resolve the baseline once.
+    adoption_sha = _aiv_adoption_sha()
+
     violations: list[tuple[str, list[str]]] = []
 
     # Cache files per commit (single query each).
@@ -194,6 +240,9 @@ def check_commits(commits: list[str]) -> list[tuple[str, list[str]]]:
     range_has_evidence = any(_is_packet(f) or _is_evidence(f) for files in files_by_sha.values() for f in files)
 
     for sha in commits:
+        # Pre-adoption / bootstrap commits are not subject to packet enforcement.
+        if _is_pre_adoption(sha, adoption_sha):
+            continue
         files = files_by_sha[sha]
         functional = [f for f in files if _is_functional(f, func_prefixes, func_root_files)]
         packets = [f for f in files if _is_packet(f)]
@@ -296,13 +345,17 @@ def main() -> int:
     print("=" * 79)
     print()
     print("WHAT HAPPENED:")
-    print(f"  {len(violations)} commit(s) contain functional files without a verification packet.")
-    print("  This means `git commit --no-verify` was used to bypass the pre-commit hook.")
+    print(f"  {len(violations)} commit(s) touch functional files but carry no verification packet.")
+    print("  Likely causes (in order of probability):")
+    print("    - a commit bypassed the pre-commit hook (e.g. `git commit --no-verify`);")
+    print("    - functional work was committed before a packet was written for it;")
+    print("    - the interpreter running the hook could not import `aiv` (see `aiv init`).")
+    print("  (Commits at or before the `.aiv.yml` adoption baseline are already exempt,")
+    print("   so a first-run bootstrap should not reach this message.)")
     print()
     print("WHY THIS IS BLOCKED:")
-    print("  Every functional file change MUST have a paired verification packet.")
-    print("  The `--no-verify` flag skips the pre-commit hook, but this pre-push hook")
-    print("  catches the violation before it reaches the remote repository.")
+    print("  Every functional file change MUST have a paired verification packet, and this")
+    print("  pre-push hook catches an uncovered commit before it reaches the remote.")
     print()
 
     print("VIOLATING COMMITS:")

@@ -121,6 +121,23 @@ class TestInitInstallsPreCommitHook:
         assert "custom hook" in hook.read_text(encoding="utf-8")
 
 
+class TestInitInstallsPostCommitHook:
+    """Issue #29 bug #2: aiv init must install a post-commit hook that records
+    commits into the active change (the SHA is only knowable after the commit)."""
+
+    def test_installs_post_commit_hook(self, fresh_repo: Path) -> None:
+        subprocess.run(
+            [sys.executable, "-m", "aiv", "init", str(fresh_repo)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        hook = fresh_repo / ".git" / "hooks" / "post-commit"
+        assert hook.exists(), "post-commit hook was not installed"
+        content = hook.read_text(encoding="utf-8")
+        assert "from aiv.hooks.post_commit import main" in content
+
+
 class TestInitInstallsPrePushHook:
     """Claim 1: aiv init installs a pre-push hook shim into .git/hooks/pre-push."""
 

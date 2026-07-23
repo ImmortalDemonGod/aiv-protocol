@@ -43,6 +43,10 @@ class ChangeContext(BaseModel):
     description: str = ""
     started_at: str  # ISO-8601
     mode: str = "direct"  # "direct" or "pr"
+    # HEAD at `aiv begin` time. Anchors commit reconstruction and untracked-commit
+    # detection (issue #29, bug #2). Defaults to "" so change.json files written by
+    # older versions still load. "" means "no HEAD at begin" (a fresh, commit-less repo).
+    base_sha: str = ""
     commits: list[CommitRecord] = Field(default_factory=list)
     files_changed: list[str] = Field(default_factory=list)
     evidence_files: list[str] = Field(default_factory=list)
@@ -136,6 +140,7 @@ def begin_change(
         description=description,
         started_at=datetime.now(timezone.utc).isoformat(),
         mode=mode,
+        base_sha=get_head_sha(repo_root),  # anchor for reconstruction / untracked detection
     )
     save_change(ctx, repo_root)
     return ctx
@@ -179,6 +184,98 @@ def record_commit(
     return ctx
 
 
+_PACKET_PREFIXES = (
+    ".github/aiv-packets/VERIFICATION_PACKET_",
+    ".github/VERIFICATION_PACKET_",
+    ".github/aiv-packets/PACKET_",
+)
+_EVIDENCE_PREFIX = ".github/aiv-evidence/EVIDENCE_"
+
+
+def _is_evidence_or_packet(path: str) -> bool:
+    """True if `path` is an AIV evidence or verification-packet markdown file.
+
+    The canonical classifier, shared with `hooks/post_commit.py` so a commit's
+    evidence is labelled identically at record time and at reconstruction time.
+    """
+    if not path.endswith(".md"):
+        return False
+    return path.startswith(_EVIDENCE_PREFIX) or any(path.startswith(p) for p in _PACKET_PREFIXES)
+
+
+def _files_in_commit(sha: str, cwd: str | None) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", sha],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=cwd,
+        )
+        if result.returncode == 0:
+            return [f for f in result.stdout.strip().split("\n") if f]
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return []
+
+
+def reconstruct_commits(ctx: ChangeContext, repo_root: Path | None = None) -> list[CommitRecord]:
+    """Rebuild the commit list from git history between the change's base and HEAD.
+
+    Fallback for when the post-commit hook did not record commits (older `aiv init`
+    with no post-commit hook, a GUI that skips hooks, or commits made before this
+    change was begun). Returns commits oldest-first; empty if the range is empty or
+    git is unavailable. (issue #29, bug #2)
+
+    Requires an explicit `base_sha` anchor. A change begun before this field existed
+    (old schema) or in a commit-less repo has `base_sha == ""`; reconstruction is then
+    UNAVAILABLE (returns `[]`) rather than falling back to `git log HEAD`, which would
+    sweep in every pre-existing commit on the branch instead of just the change's own.
+    `close_change` then raises its normal "has no commits" error, and the state
+    self-heals on the next `aiv begin` (which records a fresh `base_sha`).
+
+    Each record's `timestamp` is the commit's own author time (`%aI`), so a
+    reconstructed packet preserves when the work actually happened, not when `close`
+    was run.
+    """
+    if not ctx.base_sha:
+        return []  # no anchor -> reconstruction unavailable; never `git log HEAD`
+    cwd = str(repo_root) if repo_root else None
+    try:
+        result = subprocess.run(
+            ["git", "log", f"{ctx.base_sha}..HEAD", "--reverse", "--format=%H%x00%aI%x00%s"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=cwd,
+        )
+        if result.returncode != 0:
+            return []
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+
+    records: list[CommitRecord] = []
+    for line in result.stdout.strip().split("\n"):
+        if not line.strip():
+            continue
+        parts = line.split("\x00")
+        if len(parts) < 3:
+            continue
+        sha, authored_at, message = parts[0], parts[1], parts[2]
+        files = _files_in_commit(sha, cwd)
+        evidence = [f for f in files if _is_evidence_or_packet(f)]
+        records.append(
+            CommitRecord(
+                sha=sha,
+                message=message,
+                files=files,
+                evidence=evidence,
+                timestamp=authored_at,  # commit author time, not reconstruction time
+            )
+        )
+    return records
+
+
 def close_change(repo_root: Path | None = None) -> ChangeContext:
     """
     Close the active change and return its context for packet generation.
@@ -190,10 +287,26 @@ def close_change(repo_root: Path | None = None) -> ChangeContext:
     ctx = load_change(repo_root)
     if ctx is None:
         raise ValueError("No active change context. Run `aiv begin <name>` first.")
+
+    # If nothing was recorded (post-commit hook absent), reconstruct from git history
+    # so the recommended `begin -> commit -> close` lifecycle closes anyway (issue #29).
+    if not ctx.commits:
+        reconstructed = reconstruct_commits(ctx, repo_root)
+        if reconstructed:
+            ctx.commits = reconstructed
+            for r in reconstructed:
+                for f in r.files:
+                    if f not in ctx.files_changed:
+                        ctx.files_changed.append(f)
+                for e in r.evidence:
+                    if e not in ctx.evidence_files:
+                        ctx.evidence_files.append(e)
+            save_change(ctx, repo_root)
+
     if not ctx.commits:
         raise ValueError(
             f"Change '{ctx.name}' has no commits. Nothing to verify.\n"
-            "Run `aiv abandon` to discard, or make commits first."
+            "Make commits after `aiv begin`, or run `aiv abandon` to discard."
         )
     return ctx
 
@@ -219,17 +332,23 @@ def detect_untracked_commits(
 
     Returns list of {sha, message} dicts for untracked commits.
     """
-    if not ctx.commits:
+    # Anchor: the change's recorded base if we have it, else the parent of the first
+    # tracked commit. Using base_sha means detection works even when commits is empty
+    # (the old code returned [] in that case, which is exactly when --no-verify commits
+    # would be invisible -- issue #29, bug #2).
+    if ctx.base_sha:
+        anchor = ctx.base_sha
+    elif ctx.commits:
+        anchor = f"{ctx.commits[0].sha}^"
+    else:
         return []
 
-    # Get the base: the commit just before the first tracked commit
-    first_sha = ctx.commits[0].sha
     tracked_shas = {c.sha for c in ctx.commits}
 
     try:
-        # Get all commits from first tracked commit's parent to HEAD
+        # Get all commits from the anchor to HEAD
         result = subprocess.run(
-            ["git", "log", "--format=%H %s", f"{first_sha}^..HEAD"],
+            ["git", "log", "--format=%H %s", f"{anchor}..HEAD"],
             capture_output=True,
             text=True,
             timeout=10,

@@ -5,11 +5,17 @@ Unit tests for the pre-push hook — verifies detection of commits
 that bypassed the pre-commit hook via ``git commit --no-verify``.
 """
 
+import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from aiv.hooks.pre_push import (
+    _aiv_adoption_sha,
     _is_functional,
     _is_packet,
+    _is_pre_adoption,
     check_commits,
     main,
 )
@@ -236,3 +242,64 @@ class TestMain:
             result = main()
 
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Issue #29 bug #3: bootstrap / pre-adoption exemption
+# ---------------------------------------------------------------------------
+
+
+def _init_repo(root: Path) -> None:
+    subprocess.run(["git", "init", str(root)], capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=str(root), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=str(root), capture_output=True, check=True)
+    # A baseline root commit, so the commits under test are NOT the repo root:
+    # `git diff-tree -r <root>` reports no files (no parent to diff against), which
+    # would make a root adoption commit look empty and pass the test for the wrong reason.
+    (root / "README.md").write_text("baseline\n")
+    subprocess.run(["git", "add", "README.md"], cwd=str(root), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "docs: baseline"], cwd=str(root), capture_output=True, check=True)
+
+
+def _commit(root: Path, files: dict[str, str], message: str) -> str:
+    for name, content in files.items():
+        p = root / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+        subprocess.run(["git", "add", name], cwd=str(root), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=str(root), capture_output=True, check=True)
+    out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root), capture_output=True, text=True, check=True)
+    return out.stdout.strip()
+
+
+class TestBootstrapExemption:
+    """The bite test for bug #3: commits at/before the .aiv.yml adoption baseline are
+    exempt from packet enforcement (so a fresh aiv-init repo is pushable), while
+    commits after adoption are still enforced."""
+
+    def test_bootstrap_commit_exempt(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _init_repo(tmp_path)
+        monkeypatch.chdir(tmp_path)  # check_commits runs git in CWD
+        # Bootstrap: adds .aiv.yml + functional scaffolding, no packet (cannot have one yet).
+        boot = _commit(tmp_path, {".aiv.yml": "{}\n", "src/scaffold.py": "x\n"}, "chore: adopt aiv")
+        assert check_commits([boot]) == []  # would be a violation without the exemption
+
+    def test_post_adoption_functional_without_packet_still_flagged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _init_repo(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        boot = _commit(tmp_path, {".aiv.yml": "{}\n"}, "chore: adopt aiv")
+        bad = _commit(tmp_path, {"src/feature.py": "y\n"}, "feat: no packet")  # after adoption
+        violations = check_commits([boot, bad])
+        shas = [v[0] for v in violations]
+        assert bad[:7] in shas  # enforced
+        assert boot[:7] not in shas  # bootstrap still exempt
+
+    def test_adoption_sha_none_when_no_aiv_yml(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _init_repo(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        _commit(tmp_path, {"src/x.py": "x\n"}, "feat: x")  # no .aiv.yml ever
+        assert _aiv_adoption_sha() is None
+        # with no adoption baseline, nothing is exempt (fail-safe: scan everything)
+        assert _is_pre_adoption("a" * 40, None) is False
