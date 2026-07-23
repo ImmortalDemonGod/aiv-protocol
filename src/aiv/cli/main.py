@@ -246,6 +246,38 @@ def init(
                     pass
                 console.print(f"[green]Installed:[/green] pre-push hook -> {push_hook_file}")
 
+            # Install post-commit hook (records commits into the active change context;
+            # the commit SHA is only knowable AFTER the commit exists — issue #29)
+            post_hook_file = hooks_dir / "post-commit"
+            post_hook_shim = (
+                f"{_hook_shebang()}\n"
+                '"""AIV Protocol post-commit hook. Installed by `aiv init`.\n'
+                "\n"
+                "Records each commit into the active change context so `aiv close`\n"
+                'can package it. No-op when no change is active."""\n'
+                "import sys\n"
+                "from aiv.hooks.post_commit import main\n"
+                "sys.exit(main())\n"
+            )
+            if post_hook_file.exists():
+                existing = post_hook_file.read_text(encoding="utf-8", errors="replace")
+                if "aiv" in existing.lower():
+                    console.print(f"[yellow]Warning:[/yellow] {post_hook_file} already contains AIV hook, skipping.")
+                else:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] {post_hook_file} exists (non-AIV). "
+                        "Use [bold]--no-hook[/bold] to skip, or remove it manually first."
+                    )
+            else:
+                post_hook_file.write_text(post_hook_shim, encoding="utf-8")
+                try:
+                    import stat
+
+                    post_hook_file.chmod(post_hook_file.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+                except OSError:
+                    pass
+                console.print(f"[green]Installed:[/green] post-commit hook -> {post_hook_file}")
+
     console.print(f"[green][OK] AIV Protocol initialized in {path}[/green]")
     console.print(
         "[dim]Tip: Use [bold]aiv begin <name>[/bold] to start a tracked change,"
@@ -274,7 +306,7 @@ def quickstart() -> None:
         "\n[bold cyan]Step 0: Initialize (once per repo)[/bold cyan]\n"
         "  aiv init\n"
         "  # Creates .aiv.yml, .github/aiv-packets/, .github/aiv-evidence/,\n"
-        "  # and git hooks (pre-commit + pre-push)\n"
+        "  # and git hooks (pre-commit + post-commit + pre-push)\n"
     )
     console.print(
         "[bold cyan]Step 1: Start a tracked change[/bold cyan]\n"

@@ -6,6 +6,7 @@ Tests for the change lifecycle module (aiv begin / close / abandon / status).
 
 from __future__ import annotations
 
+import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
@@ -256,3 +257,75 @@ class TestClearChange:
     def test_noop_when_no_file(self, tmp_repo: Path) -> None:
         # Should not raise
         clear_change(tmp_repo)
+
+
+# ---------------------------------------------------------------------------
+# Issue #29 bug #2: base_sha anchoring + close-time reconstruction
+# ---------------------------------------------------------------------------
+
+
+def _init_git_repo(root: Path) -> None:
+    subprocess.run(["git", "init", str(root)], capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=str(root), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=str(root), capture_output=True, check=True)
+    (root / "README.md").write_text("x\n")
+    subprocess.run(["git", "add", "README.md"], cwd=str(root), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "baseline"], cwd=str(root), capture_output=True, check=True)
+
+
+def _git_commit(root: Path, name: str, content: str, message: str) -> str:
+    p = root / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content)
+    subprocess.run(["git", "add", name], cwd=str(root), capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=str(root), capture_output=True, check=True)
+    out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root), capture_output=True, text=True, check=True)
+    return out.stdout.strip()
+
+
+class TestBaseShaAnchoring:
+    def test_begin_records_head_as_base_sha(self, tmp_path: Path) -> None:
+        _init_git_repo(tmp_path)
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(tmp_path), capture_output=True, text=True, check=True
+        ).stdout.strip()
+        ctx = begin_change(name="feat-x", repo_root=tmp_path)
+        assert ctx.base_sha == head
+
+    def test_base_sha_empty_in_commitless_repo(self, tmp_repo: Path) -> None:
+        # tmp_repo has no git repo -> get_head_sha returns "" -> base_sha ""
+        ctx = begin_change(name="x", repo_root=tmp_repo)
+        assert ctx.base_sha == ""
+
+
+class TestCloseReconstructsFromHistory:
+    """The bite test for bug #2: with no post-commit hook recording commits,
+    `aiv close` must still reconstruct them from git history."""
+
+    def test_close_reconstructs_when_commits_empty(self, tmp_path: Path) -> None:
+        _init_git_repo(tmp_path)
+        begin_change(name="feat-x", repo_root=tmp_path)
+        sha = _git_commit(tmp_path, "src/a.py", "a\n", "feat: a")
+
+        # Nothing recorded the commit (no post-commit hook) -> commits is empty.
+        assert load_change(tmp_path).commits == []
+
+        ctx = close_change(repo_root=tmp_path)
+        assert [c.sha for c in ctx.commits] == [sha]
+        assert "src/a.py" in ctx.files_changed
+
+    def test_close_reconstructs_multiple_in_order(self, tmp_path: Path) -> None:
+        _init_git_repo(tmp_path)
+        begin_change(name="feat-x", repo_root=tmp_path)
+        s1 = _git_commit(tmp_path, "src/a.py", "a\n", "feat: a")
+        s2 = _git_commit(tmp_path, "src/b.py", "b\n", "feat: b")
+
+        ctx = close_change(repo_root=tmp_path)
+        assert [c.sha for c in ctx.commits] == [s1, s2]  # oldest-first
+
+    def test_close_still_raises_when_no_new_commits(self, tmp_path: Path) -> None:
+        _init_git_repo(tmp_path)
+        begin_change(name="feat-x", repo_root=tmp_path)
+        # no commits after begin -> genuinely empty -> must still raise
+        with pytest.raises(ValueError, match="no commits"):
+            close_change(repo_root=tmp_path)
