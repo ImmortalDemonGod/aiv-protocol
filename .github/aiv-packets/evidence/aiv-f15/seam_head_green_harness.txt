@@ -1,0 +1,13 @@
+# HARNESS-EXECUTED (#157) — same test(s) at HEAD
+# exit=0
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-8.4.2, pluggy-1.6.0
+rootdir: /home/user/aiv-protocol-aiv-f15
+configfile: pyproject.toml
+plugins: xdist-3.8.0, cov-5.0.0
+collected 4 items
+
+tests/test_aiv_f15.py ....                                               [100%]
+
+============================== 4 passed in 0.18s ===============================
+
