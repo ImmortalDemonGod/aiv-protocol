@@ -188,15 +188,19 @@ class GuardRunner:
 
         if m:
             file_path = m.group(1).strip()
-            if not file_path.startswith(".github/"):
+            # Resolve the path and require it to stay inside .github/. A bare
+            # startswith(".github/") check is bypassable with traversal such as
+            # ".github/../../etc/passwd" (path traversal -> arbitrary file read).
+            github_dir = Path(".github").resolve()
+            resolved = Path(file_path).resolve()
+            if github_dir not in resolved.parents:
                 self.result.add_block(
                     "CT-001",
-                    f"Invalid Packet Source path: {file_path} (must be within .github/)",
+                    f"Invalid Packet Source path: {file_path} (must resolve within .github/)",
                 )
                 return None
 
-            resolved = Path(file_path)
-            if resolved.exists():
+            if resolved.is_file():
                 packet_content = resolved.read_text(encoding="utf-8")
             else:
                 self.result.add_block("CT-001", f"Failed to read packet source at {file_path}")
